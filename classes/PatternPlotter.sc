@@ -1,3 +1,25 @@
+/*
+    PatternPlotter
+    Jonatan Liljedahl <lijon@kymatica.com>
+
+    plot patterns in userview
+    
+    example:
+
+    PatternPlotter(
+        Pbind(
+            \degree, Pseq([0,3,6,[3,5,6],[4,1],2],inf),
+            \amp, Pseq([0.2,0.6,0.4,1],inf),
+            \foo, Pwhite(0,10,inf),
+            \dur, Pseq([0.5,0.25,1],inf)
+        ),
+        [
+            (y: \freq -> [200,700,\exp], dotSize: \amp -> _.linlin(0,1,1,8), dotColor: Color(0,0,0,0.4)),
+            (y: \foo -> [0,10], dotSize: 0, type: \linear, lineWidth: 2, height: 100)
+        ]
+    ).length_(12).tickFullHeight_(false).gui;
+*/
+
 PatternPlotter {
     var <length, // duration to plot (in seconds)
         <>xscale = 50, // time to pixels factor (time zoom level)
@@ -5,7 +27,7 @@ PatternPlotter {
 
     var <>tickColor,
         <>tickDash,
-        <>tickFullHeight = false;
+        <>tickFullHeight = true;
 
     var <>pattern, <>defaults, <plotSpec;
 
@@ -17,18 +39,16 @@ PatternPlotter {
     
     gui {
         var win;
-        var p = PatternPlotter(pattern,plotSpec);
-        UserView(win = Window("Pattern Plot",p.bounds).front,p.bounds).background_(Color.white).drawFunc_({|v|
-            p.draw;
+        UserView(win = Window("Pattern Plot",bounds).front,bounds).background_(Color.white).drawFunc_({|v|
+            this.draw;
         }).refresh;
         ^win;
     }
     
     init {|aPattern, aPlotSpec|
         defaults = (
-            key: \freq,
-            height: 100,
-            spec: ControlSpec(20,20000,\exp),
+            y: \freq -> ControlSpec(20,20000,\exp),
+            height: 200,
             type: \levels,
             lenKey: \sustain,
             label: nil,
@@ -67,12 +87,11 @@ PatternPlotter {
 
     plotSpec_ {|aPlotSpec|
         var height = 0;
-        plotSpec = aPlotSpec;
+        plotSpec = aPlotSpec.reverse;
         plotSpec.do {|p|
             p.parent = defaults;
             height = height + (p.padding*2) + p.height;
         };
-        plotSpec = plotSpec.reverse;
         bounds.height = height;
     }
 
@@ -108,14 +127,11 @@ PatternPlotter {
                 x = round(t * xscale) + 0.5 + xmargin;
 
                 plotSpec.do {|plot,i|
-                    var old = last[i];
                     var h = plot.height;
-                    var dotSize;
-                    var y;
+                    var y, lastDot, dotSize;
 
                     yofs = yofs + plot.padding;
-    //                y = ();
-
+                    y = (bounds.height-round(yofs+(this.parmap(ev,plot.y)*h))+0.5).asArray;
                     // the inner function is flopped for multichannel expansion
                     last[i] = {|old,p|
                         if(i==0 and: {p.y > firstP.y}) { firstP = p };
@@ -146,23 +162,25 @@ PatternPlotter {
                             \levels, {
                                 Pen.line(p, p + ((ev[plot.lenKey].value * xscale) @ 0));
                                 Pen.stroke;
+                                old = nil;
+                            },
+                            \dots, {
+                                old = nil;
                             }
                         );
                         dotSize = this.parmap(ev,plot.dotSize);
-                        if(dotSize>0) {
+                        if(dotSize>0 and: {lastDot != p}) {
                             Pen.fillColor = this.parmap(ev,plot.dotColor);
                             Pen.addArc(p, dotSize, 0, 2pi);
                             Pen.fill;
+                            lastDot = p;
                         };
                         if(p.y < lastP.y) {lastP = p};
                         old;
-                    }.flop.value(
-                        old,
-                        Point.multiChannelPerform(\new,
-                            x,
-                            bounds.height-round(yofs+(this.parmap(ev,plot.y)*h))+0.5
-                        )
-                    );
+                    }.flopExtend.value(
+                        last[i],
+                        Point.multiChannelPerform(\new,x,y)
+                    ).clipExtend(y.size);
                     yofs = yofs + h + plot.padding;
                 };
 
@@ -180,5 +198,40 @@ PatternPlotter {
             }
         }
     }
+}
+
++ SequenceableCollection {
+	flopExtend {
+		var list, size, maxsize;
+
+		size = this.size;
+		maxsize = 0;
+		this.do({ arg sublist;
+			var sz;
+			sz = if (sublist.isSequenceableCollection, { sublist.size },{ 1 });
+			if (sz > maxsize, { maxsize = sz });
+		});
+
+		list = this.species.fill(maxsize, { this.species.new(size) });
+		this.do({ arg isublist, i;
+			if (isublist.isSequenceableCollection, {
+				list.do({ arg jsublist, j;
+					jsublist.add( isublist.clipAt(j); );
+				});
+			},{
+				list.do({ arg jsublist, j;
+					jsublist.add( isublist );
+				});
+			});
+		});
+		^list
+	}
+}
+
++ Function {
+	flopExtend {
+		if(def.argNames.isNil) { ^this };
+		^{ |... args| args.flopExtend.collect(this.valueArray(_)) }
+	}
 }
 
