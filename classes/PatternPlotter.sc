@@ -70,13 +70,13 @@ PatternPlotter {
 
     parmap {|e,v|
         ^if(v.class==Association) {
-            if(v.value.isKindOf(Function)) {
+            if(v.value.isKindOf(AbstractFunction)) {
                 v.value.value(e[v.key]).value
             } {
                 v.value.asSpec.unmap(e[v.key].value)
             }
         } {
-            v ? 0 // ?
+            v.value; // ? 0
         }
     }
 
