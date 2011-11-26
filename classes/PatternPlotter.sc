@@ -34,12 +34,14 @@ plotSpec keys:
 
   static parameters:
 
-    type        \linear, \steps, \levels, \dots
+    type        \linear, \steps, \levels, \bargraph, \dots
     height      the height of this plot in pixels
     lenKey      the pattern event key to use for line length in \levels type
     label       custom label, or nil to use the pattern key of y param
     labelColor  color of label
     labelFont   font of label
+    baselineColor color of horizontal bottom line, nil to hide
+    baselineDash  line dash for horizontal bottom line
 
   dynamic parameters:
 
@@ -73,6 +75,7 @@ example:
         ),
         [
             (y: \freq -> [200,700,\exp], dotSize: \amp -> _.linlin(0,1,1,8), dotColor: Color(0,0,0,0.4), \lineWidth:3),
+            (y: \amp -> [0,1], type: \bargraph, height: 50, baselineColor: Color.grey),
             (y: \foo -> [0,10], dotSize: 3, type: \linear, height: 100)
         ]
     ).length_(12).tickFullHeight_(false).gui;
@@ -119,7 +122,9 @@ PatternPlotter {
             labelColor: Color(0.3,0.6,0.4),
             labelFont: Font.monospace(9),
             dash: FloatArray[1,0],
-            color: Color.black
+            color: Color.black,
+            baselineDash: FloatArray[1,0],
+            baselineColor: nil
         );
         bounds = Rect(0,0,0,0);
         tickColor = Color.black.alpha_(0.5);
@@ -174,10 +179,14 @@ PatternPlotter {
                 Pen.stringAtPoint(lbl,(labelMargin)@y2); // print label in plot
             };
 
-    /*        Pen.line(xmargin@y2,(length*xscale+xmargin)@y2);
-            Pen.width = 1;
-            Pen.strokeColor = Color.grey(0.5);
-            Pen.stroke;*/
+            plot.baselineColor !? {
+                Pen.line(xmargin@(bounds.height - yofs + 0.5),(length*xscale+xmargin)@(bounds.height - yofs + 0.5));
+                Pen.width = 1;
+                Pen.strokeColor = plot.baselineColor;
+                Pen.lineDash = plot.baselineDash;
+                Pen.stroke;
+            };
+
             yofs = yofs + plot.height+plot.padding;
         };
 
@@ -225,6 +234,13 @@ PatternPlotter {
                             \levels, {
                                 if(lastDot != p) {
                                     Pen.line(p, p + ((ev[plot.lenKey].value * xscale) @ 0));
+                                    Pen.stroke;
+                                };
+                                old = nil;
+                            },
+                            \bargraph, {
+                                if(lastDot != p) {
+                                    Pen.line(p.x @ (bounds.height - yofs), p);
                                     Pen.stroke;
                                 };
                                 old = nil;
