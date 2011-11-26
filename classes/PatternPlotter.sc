@@ -64,6 +64,12 @@ plotSpec keys:
 
     A spec is .unmap'd to the range 0.0 - 1.0
 
+internal plotSpec keys:
+
+    state       saved state from last data point
+    baseline    pixel position of baseline
+    usedKeys    Set of pattern event keys used by this plotSpec
+
 example:
 
     PatternPlotter(
@@ -157,6 +163,11 @@ PatternPlotter {
         plotSpecs.do {|p|
             p.parent = defaults;
             height = height + (p.padding*2) + p.height;
+            p.do {|v|
+                if(v.class==Association) {
+                    p.usedKeys = p.usedKeys.add(v.key).as(IdentitySet)
+                }
+            }
         };
         bounds.height = height;
     }
@@ -164,7 +175,6 @@ PatternPlotter {
     draw {
         var stream = pattern.asStream;
         var t = 0;
-        var last = IdentityDictionary.new;
         var x;
         var yofs = 0;
         plotSpecs.do {|plot|
@@ -179,101 +189,107 @@ PatternPlotter {
                 Pen.stringAtPoint(lbl,(labelMargin)@y2); // print label in plot
             };
 
+            plot.baseline = bounds.height - yofs + 0.5;
             plot.baselineColor !? {
-                Pen.line(xmargin@(bounds.height - yofs + 0.5),(length*xscale+xmargin)@(bounds.height - yofs + 0.5));
+                Pen.line(xmargin@plot.baseline,(length*xscale+xmargin)@plot.baseline);
                 Pen.width = 1;
                 Pen.strokeColor = plot.baselineColor;
                 Pen.lineDash = plot.baselineDash;
                 Pen.stroke;
             };
 
+            plot.state = nil;
+
             yofs = yofs + plot.height+plot.padding;
         };
 
         while { t<length } {
             stream.next(Event.default).use {|ev|
-                var lastP=0@inf, firstP=0@0;
+                var topY= -1, bottomY= inf;
                 yofs = 0;
                 x = round(t * xscale) + 0.5 + xmargin;
 
-                plotSpecs.do {|plot,i|
+                plotSpecs.do {|plot|
                     var h = plot.height;
                     var y, lastDot, dotSize;
 
                     yofs = yofs + plot.padding;
-                    y = (bounds.height-round(yofs+(this.parmap(ev,plot.y)*h))+0.5).asArray;
+                    if(plot.usedKeys.inject(true, {|a,b| a and: ev.includesKey(b)})) {
+                        y = (bounds.height-round(yofs+(this.parmap(ev,plot.y)*h))+0.5).asArray;
 
-                    last[i] = max(last[i].size,y.size).collect {|n|
-                        var old = last[i] !? {last[i].clipAt(n)}; // last[i] !? _.clipAt(n); in sc3.5
-                        var p = x @ y.clipAt(n);
+                        plot.state = max(plot.state.size,y.size).collect {|n|
+                            var old = plot.state !? {plot.state.clipAt(n)};
+                            var p = x @ y.clipAt(n);
 
-                        if(i==0 and: {p.y > firstP.y}) { firstP = p };
+                            Pen.strokeColor = this.parmap(ev,plot.color);
+                            Pen.width = this.parmap(ev,plot.lineWidth);
+                            Pen.lineDash = this.parmap(ev,plot.dash);
 
-                        Pen.strokeColor = this.parmap(ev,plot.color);
-                        Pen.width = this.parmap(ev,plot.lineWidth);
-                        Pen.lineDash = this.parmap(ev,plot.dash);
-
-                        switch(plot.type,
-                            \linear, {
-                                old !? {
-                                    Pen.line(old, p);
+                            switch(plot.type,
+                                \linear, {
+                                    old !? {
+                                        Pen.line(old, p);
+                                        Pen.stroke;
+                                    };
+                                    old = p;
+                                },
+                                \steps, {
+                                    if(old.isNil) {
+                                        Pen.moveTo(p);
+                                    } {
+                                        Pen.line(p.x @ old, p);
+                                    };
+                                    Pen.lineTo(p + (round(ev.delta * xscale) @ 0));
                                     Pen.stroke;
-                                };
-                                old = p;
-                            },
-                            \steps, {
-                                if(old.isNil) {
-                                    Pen.moveTo(p);
-                                } {
-                                    Pen.line(p.x @ old, p);
-                                };
-                                Pen.lineTo(p + (round(ev.delta * xscale) @ 0));
-                                Pen.stroke;
-                                old = p.y;
-                            },
-                            \levels, {
-                                if(lastDot != p) {
-                                    Pen.line(p, p + ((ev[plot.lenKey].value * xscale) @ 0));
-                                    Pen.stroke;
-                                };
-                                old = nil;
-                            },
-                            \bargraph, {
-                                if(lastDot != p) {
-                                    Pen.line(p.x @ (bounds.height - yofs), p);
-                                    Pen.stroke;
-                                };
-                                old = nil;
-                            },
-                            \dots, {
-                                old = nil;
-                            }
-                        );
-                        dotSize = this.parmap(ev,plot.dotSize);
-                        if(dotSize>0 and: {lastDot != p}) {
-                            Pen.fillColor = this.parmap(ev,plot.dotColor);
-                            Pen.addArc(p, dotSize, 0, 2pi);
-                            Pen.fill;
-                        };
-                        lastDot = p;
-                        if(p.y < lastP.y) {lastP = p};
+                                    old = p.y;
+                                },
+                                \levels, {
+                                    if(lastDot != p) {
+                                        Pen.line(p, p + ((ev[plot.lenKey].value * xscale) @ 0));
+                                        Pen.stroke;
+                                    };
+                                    old = nil;
+                                },
+                                \bargraph, {
+                                    if(lastDot != p) {
+                                        Pen.line(p.x @ plot.baseline, p);
+                                        Pen.stroke;
+                                    };
+                                    old = nil;
+                                },
+                                \dots, {
+                                    old = nil;
+                                }
+                            );
+                            dotSize = this.parmap(ev,plot.dotSize);
+                            if(dotSize>0 and: {lastDot != p}) {
+                                Pen.fillColor = this.parmap(ev,plot.dotColor);
+                                Pen.addArc(p, dotSize, 0, 2pi);
+                                Pen.fill;
+                            };
+                            lastDot = p;
+                            if(p.y < bottomY) { bottomY = p.y };
+                            if(p.y > topY) { topY = p.y };
 
-                        old;
-                    }.clipExtend(y.size);
-
+                            old;
+                        }.clipExtend(y.size);
+                    };
                     yofs = yofs + h + plot.padding;
                 };
 
-                if(tickFullHeight) {
-                    Pen.line(x@0,x@bounds.height);
-                } {
-                    Pen.line(firstP,lastP);
-                };
-                Pen.width = 1;
-                Pen.strokeColor = tickColor;
-                Pen.lineDash = tickDash;
-                Pen.stroke;
-
+//                if(ev.delta>0) {
+                    if(tickFullHeight) {
+                        topY = 0;
+                        bottomY = bounds.height;
+                    };
+                    if(topY >= 0) {
+                        Pen.line(x@topY,x@bottomY);
+                        Pen.width = 1;
+                        Pen.strokeColor = tickColor;
+                        Pen.lineDash = tickDash;
+                        Pen.stroke;
+                    };
+  //              };
                 t = t + ev.delta;
             }
         }
