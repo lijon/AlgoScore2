@@ -1,10 +1,67 @@
-/*
-    PatternPlotter
-    Jonatan Liljedahl <lijon@kymatica.com>
+/*************************************************************************
+    PatternPlotter - Jonatan Liljedahl <lijon@kymatica.com>
 
     plot patterns in userview
+
+usage:
+
+    p = PatternPlotter(pattern, plotSpecs);
+
+    where pattern is an event pattern and plotSpecs an array of Event's describing what and how to plot.
+
+    p.bounds    returns the bounds of the plot in pixels, as a Rect with 0@0 as origin
+    p.draw      draw the plots. call this inside your userView
+
+    p.gui       create a window with a view that draws the plots
+
+properties:
+
+    p.length    duration to plot (seconds)
+    p.xscale    time zoom level (pixels per beat)
+    p.xmargin   horizontal margin (pixels)
+    p.tickColor color of vertical event tick lines
+    p.tickDash  dash of vertical event tick lines
+    p.bounds
+    p.tickFullHeight
+                if false, draw event tick line only from top data point to bottom data point
+    p.pattern   the pattern
+    p.plotSpecs the plotSpecs
+    p.defaults  default plotSpec
+
+plotSpec keys:
+
+    a plotSpec is an Event in the form (param1: value, param2: value, ...)
+
+  static parameters:
+
+    type        \linear, \steps, \levels, \dots
+    height      the height of this plot in pixels
+    lenKey      the pattern event key to use for line length in \levels type
+    label       custom label, or nil to use the pattern key of y param
+    labelColor  color of label
+
+  dynamic parameters:
+
+    y           vertical position of data point (in the range 0.0 - 1.0)
+    lineWidth   line width (pixels)
+    padding     top and bottom padding (pixels)
+    dotSize     size of data point circle (pixels)
+    dotColor    color of data point circle (Color)
+    dash        line dash (FloatArray)
+    color       line color (Color)
     
-    example:
+  the dynamic parameters can take a single value:
+
+    value       (like 1.0 or Color.black or anything that responds to .value, like Function or Stream)
+
+  or an Association between a pattern event key and mapping spec/function:
+
+    \keyName -> {|input_value| do_something_and_return_output_value }
+    \keyName -> anything that responds to .asSpec
+
+    A spec is .unmap'd to the range 0.0 - 1.0
+
+example:
 
     PatternPlotter(
         Pbind(
@@ -14,11 +71,12 @@
             \dur, Pseq([0.5,0.25,1],inf)
         ),
         [
-            (y: \freq -> [200,700,\exp], dotSize: \amp -> _.linlin(0,1,1,8), dotColor: Color(0,0,0,0.4), \lineWidth:2),
-            (y: \foo -> [0,10], dotSize: 0, type: \linear, height: 100)
+            (y: \freq -> [200,700,\exp], dotSize: \amp -> _.linlin(0,1,1,8), dotColor: Color(0,0,0,0.4), \lineWidth:3),
+            (y: \foo -> [0,10], dotSize: 3, type: \linear, height: 100)
         ]
     ).length_(12).tickFullHeight_(false).gui;
-*/
+
+********************************************************************/
 
 PatternPlotter {
     var <length, // duration to plot (in seconds)
@@ -29,14 +87,14 @@ PatternPlotter {
         <>tickDash,
         <>tickFullHeight = true;
 
-    var <>pattern, <>defaults, <plotSpec;
+    var <>pattern, <>defaults, <plotSpecs;
 
     var <bounds;
 
-    *new {|pattern,plotSpec|
-        ^super.new.init(pattern, plotSpec);
+    *new {|pattern,plotSpecs|
+        ^super.new.init(pattern, plotSpecs);
     }
-    
+
     gui {
         var win;
         UserView(win = Window("Pattern Plot",bounds).front,bounds).background_(Color.white).drawFunc_({|v|
@@ -44,8 +102,8 @@ PatternPlotter {
         }).refresh;
         ^win;
     }
-    
-    init {|aPattern, aPlotSpec|
+
+    init {|aPattern, aPlotSpecs|
         defaults = (
             y: \freq -> ControlSpec(20,20000,\exp),
             height: 200,
@@ -65,7 +123,7 @@ PatternPlotter {
         tickDash = FloatArray[1,2];
         this.length = 16;
         this.pattern = aPattern;
-        this.plotSpec = aPlotSpec;
+        this.plotSpecs = aPlotSpecs;
     }
 
     parmap {|e,v|
@@ -85,10 +143,10 @@ PatternPlotter {
         bounds.width = length*xscale+(xmargin*2);
     }
 
-    plotSpec_ {|aPlotSpec|
+    plotSpecs_ {|aPlotSpecs|
         var height = 0;
-        plotSpec = aPlotSpec.reverse;
-        plotSpec.do {|p|
+        plotSpecs = aPlotSpecs.reverse;
+        plotSpecs.do {|p|
             p.parent = defaults;
             height = height + (p.padding*2) + p.height;
         };
@@ -101,18 +159,18 @@ PatternPlotter {
         var last = IdentityDictionary.new;
         var x;
         var yofs = 0;
-        plotSpec.do {|plot|
+        plotSpecs.do {|plot|
             var y2;
             var lbl = plot.label ?? {if(plot.y.class==Association) {plot.y.key}};
             yofs = yofs + plot.padding;
             y2 = round(bounds.height-yofs-plot.height-plot.padding)+0.5;
-            
+
             lbl !? {
             Pen.font = Font.monospace(9);
                 Pen.color = plot.labelColor;
                 Pen.stringAtPoint(lbl,(xmargin+2)@y2); // print label in plot
             };
-            
+
     /*        Pen.line(xmargin@y2,(length*xscale+xmargin)@y2);
             Pen.width = 1;
             Pen.strokeColor = Color.grey(0.5);
@@ -126,7 +184,7 @@ PatternPlotter {
                 yofs = 0;
                 x = round(t * xscale) + 0.5 + xmargin;
 
-                plotSpec.do {|plot,i|
+                plotSpecs.do {|plot,i|
                     var h = plot.height;
                     var y, lastDot, dotSize;
 
