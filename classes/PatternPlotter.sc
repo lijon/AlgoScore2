@@ -14,8 +14,8 @@
             \dur, Pseq([0.5,0.25,1],inf)
         ),
         [
-            (y: \freq -> [200,700,\exp], dotSize: \amp -> _.linlin(0,1,1,8), dotColor: Color(0,0,0,0.4)),
-            (y: \foo -> [0,10], dotSize: 0, type: \linear, lineWidth: 2, height: 100)
+            (y: \freq -> [200,700,\exp], dotSize: \amp -> _.linlin(0,1,1,8), dotColor: Color(0,0,0,0.4), \lineWidth:2),
+            (y: \foo -> [0,10], dotSize: 0, type: \linear, height: 100)
         ]
     ).length_(12).tickFullHeight_(false).gui;
 */
@@ -132,8 +132,11 @@ PatternPlotter {
 
                     yofs = yofs + plot.padding;
                     y = (bounds.height-round(yofs+(this.parmap(ev,plot.y)*h))+0.5).asArray;
-                    // the inner function is flopped for multichannel expansion
-                    last[i] = {|old,p|
+
+                    last[i] = max(last[i].size,y.size).collect {|n|
+                        var old = if(last[i].notNil) {last[i].clipAt(n)};
+                        var p = x @ y.clipAt(n);
+
                         if(i==0 and: {p.y > firstP.y}) { firstP = p };
 
                         Pen.strokeColor = this.parmap(ev,plot.color);
@@ -160,8 +163,10 @@ PatternPlotter {
                                 Pen.stroke;
                             },
                             \levels, {
-                                Pen.line(p, p + ((ev[plot.lenKey].value * xscale) @ 0));
-                                Pen.stroke;
+                                if(lastDot != p) {
+                                    Pen.line(p, p + ((ev[plot.lenKey].value * xscale) @ 0));
+                                    Pen.stroke;
+                                };
                                 old = nil;
                             },
                             \dots, {
@@ -173,14 +178,13 @@ PatternPlotter {
                             Pen.fillColor = this.parmap(ev,plot.dotColor);
                             Pen.addArc(p, dotSize, 0, 2pi);
                             Pen.fill;
-                            lastDot = p;
                         };
+                        lastDot = p;
                         if(p.y < lastP.y) {lastP = p};
+
                         old;
-                    }.flopExtend.value(
-                        last[i],
-                        Point.multiChannelPerform(\new,x,y)
-                    ).clipExtend(y.size);
+                    }.clipExtend(y.size);
+
                     yofs = yofs + h + plot.padding;
                 };
 
