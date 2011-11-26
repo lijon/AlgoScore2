@@ -192,7 +192,7 @@ PatternPlotter {
                     y = (bounds.height-round(yofs+(this.parmap(ev,plot.y)*h))+0.5).asArray;
 
                     last[i] = max(last[i].size,y.size).collect {|n|
-                        var old = if(last[i].notNil) {last[i].clipAt(n)};
+                        var old = last[i] !? {last[i].clipAt(n)}; // last[i] !? _.clipAt(n); in sc3.5
                         var p = x @ y.clipAt(n);
 
                         if(i==0 and: {p.y > firstP.y}) { firstP = p };
@@ -213,10 +213,11 @@ PatternPlotter {
                                 if(old.isNil) {
                                     Pen.moveTo(p);
                                 } {
-                                    Pen.line(old,p);
+                                    Pen.line(p.x @ old, p);
                                 };
-                                Pen.lineTo(old = p + (round(ev.delta * xscale) @ 0));
+                                Pen.lineTo(p + (round(ev.delta * xscale) @ 0));
                                 Pen.stroke;
+                                old = p.y;
                             },
                             \levels, {
                                 if(lastDot != p) {
