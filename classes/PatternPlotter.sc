@@ -203,12 +203,10 @@ PatternPlotter {
 
                         switch(plot.type,
                             \linear, {
-                                if(old.isNil) {
-                                    Pen.moveTo(p);
-                                } {
+                                if(old.notNil) {
                                     Pen.line(old,p);
+                                    Pen.stroke;
                                 };
-                                Pen.stroke;
                                 old = p;
                             },
                             \steps, {
