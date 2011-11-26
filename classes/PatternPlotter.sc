@@ -82,7 +82,8 @@ example:
 PatternPlotter {
     var <length, // duration to plot (in seconds)
         <>xscale = 50, // time to pixels factor (time zoom level)
-        <>xmargin = 10;
+        <>xmargin = 10,
+        <>labelMargin = 10;
 
     var <>tickColor,
         <>tickDash,
@@ -170,7 +171,7 @@ PatternPlotter {
             lbl !? {
                 Pen.font = plot.labelFont;
                 Pen.color = plot.labelColor;
-                Pen.stringAtPoint(lbl,(xmargin+2)@y2); // print label in plot
+                Pen.stringAtPoint(lbl,(labelMargin)@y2); // print label in plot
             };
 
     /*        Pen.line(xmargin@y2,(length*xscale+xmargin)@y2);
