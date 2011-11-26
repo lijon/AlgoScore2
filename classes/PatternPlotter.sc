@@ -39,6 +39,7 @@ plotSpec keys:
     lenKey      the pattern event key to use for line length in \levels type
     label       custom label, or nil to use the pattern key of y param
     labelColor  color of label
+    labelFont   font of label
 
   dynamic parameters:
 
@@ -115,6 +116,7 @@ PatternPlotter {
             dotSize: 2,
             dotColor: Color.black,
             labelColor: Color(0.3,0.6,0.4),
+            labelFont: Font.monospace(9),
             dash: FloatArray[1,0],
             color: Color.black
         );
@@ -166,7 +168,7 @@ PatternPlotter {
             y2 = round(bounds.height-yofs-plot.height-plot.padding)+0.5;
 
             lbl !? {
-            Pen.font = Font.monospace(9);
+                Pen.font = plot.labelFont;
                 Pen.color = plot.labelColor;
                 Pen.stringAtPoint(lbl,(xmargin+2)@y2); // print label in plot
             };
@@ -203,8 +205,8 @@ PatternPlotter {
 
                         switch(plot.type,
                             \linear, {
-                                if(old.notNil) {
-                                    Pen.line(old,p);
+                                old !? {
+                                    Pen.line(old, p);
                                     Pen.stroke;
                                 };
                                 old = p;
