@@ -204,38 +204,3 @@ PatternPlotter {
     }
 }
 
-+ SequenceableCollection {
-	flopExtend {
-		var list, size, maxsize;
-
-		size = this.size;
-		maxsize = 0;
-		this.do({ arg sublist;
-			var sz;
-			sz = if (sublist.isSequenceableCollection, { sublist.size },{ 1 });
-			if (sz > maxsize, { maxsize = sz });
-		});
-
-		list = this.species.fill(maxsize, { this.species.new(size) });
-		this.do({ arg isublist, i;
-			if (isublist.isSequenceableCollection, {
-				list.do({ arg jsublist, j;
-					jsublist.add( isublist.clipAt(j); );
-				});
-			},{
-				list.do({ arg jsublist, j;
-					jsublist.add( isublist );
-				});
-			});
-		});
-		^list
-	}
-}
-
-+ Function {
-	flopExtend {
-		if(def.argNames.isNil) { ^this };
-		^{ |... args| args.flopExtend.collect(this.valueArray(_)) }
-	}
-}
-
