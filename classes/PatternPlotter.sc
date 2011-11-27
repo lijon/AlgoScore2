@@ -153,6 +153,11 @@ PatternPlotter {
         }
     }
 
+    checkKeys {|ev, plot|
+        plot.usedKeys.do {|k| ev[k] ?? {^false} };
+        ^true;
+    }
+
     length_ {|len|
         length = len;
         bounds.width = length*xscale+(xmargin*2);
@@ -216,7 +221,7 @@ PatternPlotter {
                     var y, lastDot, dotSize;
 
                     yofs = yofs + plot.padding;
-                    if(id.isNil or: {id==plot.plotID} and: {plot.usedKeys.inject(true, {|a,b| a and: ev.includesKey(b)})}) {
+                    if(id.isNil or: {id==plot.plotID} and: {this.checkKeys(ev,plot)}) {
                         y = (bounds.height-round(yofs+(this.parmap(ev,plot.y)*h))+0.5).asArray;
 
                         plot.state = max(plot.state.size,y.size).collect {|n|
