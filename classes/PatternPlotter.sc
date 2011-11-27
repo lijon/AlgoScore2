@@ -41,7 +41,8 @@ plotSpec keys:
     labelColor  color of label
     labelFont   font of label
     baselineColor color of horizontal bottom line, nil to hide
-    baselineDash  line dash for horizontal bottom line
+    baselineDash line dash for horizontal bottom line
+    plotID      only plot this if the pattern event has a plotID that is nil or matches this
 
   dynamic parameters:
 
@@ -206,6 +207,7 @@ PatternPlotter {
         while { t<length } {
             stream.next(Event.default).use {|ev|
                 var topY= -1, bottomY= inf;
+                var id = ev.plotID;
                 yofs = 0;
                 x = round(t * xscale) + 0.5 + xmargin;
 
@@ -214,7 +216,7 @@ PatternPlotter {
                     var y, lastDot, dotSize;
 
                     yofs = yofs + plot.padding;
-                    if(plot.usedKeys.inject(true, {|a,b| a and: ev.includesKey(b)})) {
+                    if(id.isNil or: {id==plot.plotID} and: {plot.usedKeys.inject(true, {|a,b| a and: ev.includesKey(b)})}) {
                         y = (bounds.height-round(yofs+(this.parmap(ev,plot.y)*h))+0.5).asArray;
 
                         plot.state = max(plot.state.size,y.size).collect {|n|
