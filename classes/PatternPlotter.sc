@@ -18,7 +18,8 @@ properties:
 
     p.length    duration to plot (seconds)
     p.xscale    time zoom level (pixels per beat)
-    p.xmargin   horizontal margin (pixels)
+    p.leftMargin left margin (pixels)
+    p.rightMargin left margin (pixels)
     p.tickColor color of vertical event tick lines
     p.tickDash  dash of vertical event tick lines
     p.bounds
@@ -97,7 +98,8 @@ example:
 PatternPlotter {
     var <length, // duration to plot (in seconds)
         <xscale = 50, // time to pixels factor (time zoom level)
-        <xmargin = 10,
+        <leftMargin = 10,
+        <rightMargin = 10,
         <>labelMargin = 10;
 
     var <>tickColor,
@@ -173,7 +175,7 @@ PatternPlotter {
     }
 
     calcWidth {
-        bounds.width = length*xscale+(xmargin*2);
+        bounds.width = length*xscale+leftMargin+rightMargin;
     }
 
     length_ {|len|
@@ -184,8 +186,12 @@ PatternPlotter {
         xscale = val;
         this.calcWidth;
     }
-    xmargin_ {|val|
-        xmargin = val;
+    leftMargin_ {|val|
+        leftMargin = val;
+        this.calcWidth;
+    }
+    rightMargin_ {|val|
+        rightMargin = val;
         this.calcWidth;
     }
 
@@ -223,7 +229,7 @@ PatternPlotter {
 
             plot.baseline = bounds.height - yofs + 0.5;
             plot.baselineColor !? {
-                Pen.line(xmargin@plot.baseline,(length*xscale+xmargin)@plot.baseline);
+                Pen.line(leftMargin@plot.baseline,(length*xscale+leftMargin)@plot.baseline);
                 Pen.width = 1;
                 Pen.strokeColor = plot.baselineColor;
                 Pen.lineDash = plot.baselineDash;
@@ -240,7 +246,7 @@ PatternPlotter {
                 var topY= -1, bottomY= inf;
                 var id = ev.plotID;
                 yofs = 0;
-                x = round(t * xscale) + 0.5 + xmargin;
+                x = round(t * xscale) + 0.5 + leftMargin;
 
                 plotSpecs.do {|plot|
                     var h = plot.height;
