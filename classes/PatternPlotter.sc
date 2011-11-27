@@ -234,14 +234,12 @@ PatternPlotter {
                                     old = p;
                                 },
                                 \steps, {
-                                    if(old.isNil) {
-                                        Pen.moveTo(p);
-                                    } {
-                                        Pen.line(p.x @ old, p);
+                                    old !? {
+                                        Pen.line(old, old.x@p.y);
+                                        Pen.lineTo(p);
+                                        Pen.stroke;
                                     };
-                                    Pen.lineTo(p + (round(ev.delta * xscale) @ 0));
-                                    Pen.stroke;
-                                    old = p.y;
+                                    old = p;
                                 },
                                 \levels, {
                                     if(lastDot != p) {
