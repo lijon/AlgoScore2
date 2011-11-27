@@ -96,8 +96,8 @@ example:
 
 PatternPlotter {
     var <length, // duration to plot (in seconds)
-        <>xscale = 50, // time to pixels factor (time zoom level)
-        <>xmargin = 10,
+        <xscale = 50, // time to pixels factor (time zoom level)
+        <xmargin = 10,
         <>labelMargin = 10;
 
     var <>tickColor,
@@ -172,9 +172,21 @@ PatternPlotter {
         ^true;
     }
 
+    calcWidth {
+        bounds.width = length*xscale+(xmargin*2);
+    }
+
     length_ {|len|
         length = len;
-        bounds.width = length*xscale+(xmargin*2);
+        this.calcWidth;
+    }
+    xscale_ {|val|
+        xscale = val;
+        this.calcWidth;
+    }
+    xmargin_ {|val|
+        xmargin = val;
+        this.calcWidth;
     }
 
     plotSpecs_ {|aPlotSpecs|
