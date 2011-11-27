@@ -65,6 +65,7 @@ plotSpec keys:
   or an Association between a pattern event key and mapping spec/function:
 
     \keyName -> {|input_value| do_something_and_return_output_value }
+    \keyName -> nil (just pass the value through as is)
     \keyName -> anything that responds to .asSpec
 
     A spec is .unmap'd to the range 0.0 - 1.0
@@ -87,7 +88,7 @@ example:
         [
             (y: \freq -> [250,550,\exp], valueLabel: \freq -> _.round(0.01), dotSize: \amp -> _.linlin(0,1,1,8), dotColor: Color(0,0,0,0.4), \lineWidth:3),
             (y: \amp -> [0,1], type: \bargraph, height: 50, baselineColor: Color.grey),
-            (y: \foo -> [0,10], dotSize: 3, type: \linear, height: 100, valueLabel: \foo -> _.value)
+            (y: \foo -> [0,10], dotSize: 3, type: \linear, height: 100, valueLabel: \foo -> nil)
         ]
     ).length_(12).tickFullHeight_(false).gui;
 
@@ -151,11 +152,16 @@ PatternPlotter {
 
     parmap {|e,v|
         ^if(v.class==Association) {
-            if(v.value.isKindOf(AbstractFunction)) {
-                v.value.value(e[v.key]).value
-            } {
-                v.value.asSpec.unmap(e[v.key].value)
-            }
+            case
+                {v.value.isKindOf(AbstractFunction)} {
+                    v.value.value(e[v.key]).value
+                }
+                {v.value.isKindOf(Nil)} {
+                    e[v.key].value
+                }
+                {
+                    v.value.asSpec.unmap(e[v.key].value)
+                };
         } {
             v.value; // ? 0
         }
