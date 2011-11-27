@@ -53,6 +53,10 @@ plotSpec keys:
     dotColor    color of data point circle (Color)
     dash        line dash (FloatArray)
     color       line color (Color)
+    valueLabel  value to print at data point
+    valueLabelColor color for above
+    valueLabelFont font for above
+    valueLabelOffset offset for above relative data point
     
   the dynamic parameters can take a single value:
 
@@ -81,9 +85,9 @@ example:
             \dur, Pseq([0.5,0.25,1],inf)
         ),
         [
-            (y: \freq -> [200,700,\exp], dotSize: \amp -> _.linlin(0,1,1,8), dotColor: Color(0,0,0,0.4), \lineWidth:3),
+            (y: \freq -> [250,550,\exp], valueLabel: \freq -> _.round(0.01), dotSize: \amp -> _.linlin(0,1,1,8), dotColor: Color(0,0,0,0.4), \lineWidth:3),
             (y: \amp -> [0,1], type: \bargraph, height: 50, baselineColor: Color.grey),
-            (y: \foo -> [0,10], dotSize: 3, type: \linear, height: 100)
+            (y: \foo -> [0,10], dotSize: 3, type: \linear, height: 100, valueLabel: \foo -> _.value)
         ]
     ).length_(12).tickFullHeight_(false).gui;
 
@@ -128,13 +132,17 @@ PatternPlotter {
             dotColor: Color.black,
             labelColor: Color(0.3,0.6,0.4),
             labelFont: Font.monospace(9),
+            valueLabel: nil,
+            valueLabelColor: Color(0.6,0.3,0.4),
+            valueLabelFont: Font.monospace(9),
+            valueLabelOffset: 4 @ -12,
             dash: FloatArray[1,0],
             color: Color.black,
             baselineDash: FloatArray[1,0],
             baselineColor: nil
         );
         bounds = Rect(0,0,0,0);
-        tickColor = Color.black.alpha_(0.5);
+        tickColor = Color(0,0,0.5,0.5);
         tickDash = FloatArray[1,2];
         this.length = 16;
         this.pattern = aPattern;
@@ -271,6 +279,11 @@ PatternPlotter {
                                 Pen.fillColor = this.parmap(ev,plot.dotColor);
                                 Pen.addArc(p, dotSize, 0, 2pi);
                                 Pen.fill;
+                            };
+                            if(plot.valueLabel.notNil) {
+                                Pen.font = this.parmap(ev,plot.valueLabelFont);
+                                Pen.color = this.parmap(ev,plot.valueLabelColor);
+                                Pen.stringAtPoint(this.parmap(ev,plot.valueLabel).asArray.clipAt(n).asString,p + plot.valueLabelOffset);
                             };
                             lastDot = p;
                             if(p.y < bottomY) { bottomY = p.y };
