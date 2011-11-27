@@ -299,15 +299,17 @@ PatternPlotter {
                                 }
                             );
                             dotSize = this.parmap(ev,plot.dotSize);
-                            if(dotSize>0 and: {lastDot != p}) {
-                                Pen.fillColor = this.parmap(ev,plot.dotColor);
-                                Pen.addArc(p, dotSize, 0, 2pi);
-                                Pen.fill;
-                            };
-                            if(plot.valueLabel.notNil) {
-                                Pen.font = this.parmap(ev,plot.valueLabelFont);
-                                Pen.color = this.parmap(ev,plot.valueLabelColor);
-                                Pen.stringAtPoint(this.parmap(ev,plot.valueLabel).asArray.clipAt(n).asString,p + plot.valueLabelOffset);
+                            if(lastDot != p) {
+                                if(dotSize>0) {
+                                    Pen.fillColor = this.parmap(ev,plot.dotColor);
+                                    Pen.addArc(p, dotSize, 0, 2pi);
+                                    Pen.fill;
+                                };
+                                if(plot.valueLabel.notNil) {
+                                    Pen.font = this.parmap(ev,plot.valueLabelFont);
+                                    Pen.color = this.parmap(ev,plot.valueLabelColor);
+                                    Pen.stringAtPoint(this.parmap(ev,plot.valueLabel).asArray.clipAt(n).asString,p + plot.valueLabelOffset);
+                                };
                             };
                             lastDot = p;
                             if(p.y < bottomY) { bottomY = p.y };
