@@ -83,10 +83,10 @@ example:
             \degree, Pseq([0,3,6,[3,5,6],[4,1],2],inf),
             \amp, Pseq([0.2,0.6,0.4,1],inf),
             \foo, Pwhite(0,10,inf),
-            \dur, Pseq([0.5,0.25,1],inf)
+            \dur, Pseq([0.5,0.25,1,0.25],inf)
         ),
         [
-            (y: \freq -> [250,550,\exp], valueLabel: \freq -> _.round(0.01), dotSize: \amp -> _.linlin(0,1,1,8), dotColor: Color(0,0,0,0.4), \lineWidth:3),
+            (y: \freq -> [250,550,\exp], valueLabel: \freq -> _.round(0.1), dotSize: \amp -> _.linlin(0,1,1,8), dotColor: Color(0,0,0,0.4), \lineWidth:3),
             (y: \amp -> [0,1], type: \bargraph, height: 50, baselineColor: Color.grey),
             (y: \foo -> [0,10], dotSize: 3, type: \linear, height: 100, valueLabel: \foo -> nil)
         ]
@@ -235,7 +235,7 @@ PatternPlotter {
                     var y, lastDot, dotSize;
 
                     yofs = yofs + plot.padding;
-                    if(id.isNil or: {id==plot.plotID} and: {this.checkKeys(ev,plot)}) {
+                    if(id.isNil or: {id==plot.plotID} and: {this.checkKeys(ev,plot) and: {ev.type!=\rest and: {ev.detunedFreq.value.isRest.not}}}) {
                         y = (bounds.height-round(yofs+(this.parmap(ev,plot.y)*h))+0.5).asArray;
 
                         plot.state = max(plot.state.size,y.size).collect {|n|
