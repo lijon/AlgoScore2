@@ -156,18 +156,19 @@ PatternPlotter {
         ^if(v.class==Association) {
             case
                 {v.value.isKindOf(AbstractFunction)} {
-                    v.value.value(e[v.key]).value
+                    v.value.multiChannelPerform(\value,e[v.key].value)
                 }
                 {v.value.isKindOf(Nil)} {
-                    e[v.key].value
+                    e[v.key].value.asArray
                 }
                 {
-                    v.value.asSpec.unmap(e[v.key].value)
+                    v.value.asSpec.unmap(e[v.key].value).asArray
                 };
         } {
-            v.value; // ? 0
+            [v.value]
         }
     }
+    parmapClip {|e, v, n| ^this.parmap(e,v).clipAt(n)}
 
     checkKeys {|ev, plot|
         plot.usedKeys.do {|k| ev[k] ?? {^false} };
@@ -215,6 +216,7 @@ PatternPlotter {
         var t = 0;
         var x;
         var yofs = 0;
+        var ev;
         plotSpecs.do {|plot|
             var y2;
             var lbl = plot.label ?? {if(plot.y.class==Association) {plot.y.key}};
@@ -241,10 +243,14 @@ PatternPlotter {
             yofs = yofs + plot.height+plot.padding;
         };
 
-        while { t<length } {
-            stream.next(Event.default).use {|ev|
+        while { ev = stream.next(Event.default); t<length and: {ev.notNil} } {
+            case
+            {ev.isKindOf(SimpleNumber)} { t = t + ev }
+            {ev.class==Event} { ev.use {
                 var topY= -1, bottomY= inf;
                 var id = ev.plotID;
+                var doPlot = not(ev.type==\rest or: {ev.detunedFreq.value.isRest});
+
                 yofs = 0;
                 x = round(t * xscale) + 0.5 + leftMargin;
 
@@ -253,16 +259,16 @@ PatternPlotter {
                     var y, lastDot, dotSize;
 
                     yofs = yofs + plot.padding;
-                    if(id.isNil or: {id==plot.plotID} and: {this.checkKeys(ev,plot) and: {ev.type!=\rest and: {ev.detunedFreq.value.isRest.not}}}) {
-                        y = (bounds.height-round(yofs+(this.parmap(ev,plot.y)*h))+0.5).asArray;
+                    if(id.isNil or: {id==plot.plotID} and: {doPlot and: this.checkKeys(ev,plot)}) {
+                        y = (bounds.height-round(yofs+(this.parmap(ev,plot.y)*h))+0.5);
 
                         plot.state = max(plot.state.size,y.size).collect {|n|
                             var old = plot.state !? {plot.state.clipAt(n)};
                             var p = x @ y.clipAt(n);
 
-                            Pen.strokeColor = this.parmap(ev,plot.color);
-                            Pen.width = this.parmap(ev,plot.lineWidth);
-                            Pen.lineDash = this.parmap(ev,plot.dash);
+                            Pen.strokeColor = this.parmapClip(ev,plot.color,n);
+                            Pen.width = this.parmapClip(ev,plot.lineWidth,n);
+                            Pen.lineDash = this.parmapClip(ev,plot.dash,n);
 
                             switch(plot.type,
                                 \linear, {
@@ -298,17 +304,18 @@ PatternPlotter {
                                     old = nil;
                                 }
                             );
-                            dotSize = this.parmap(ev,plot.dotSize);
+                            dotSize = this.parmapClip(ev,plot.dotSize,n);
+                            [dotSize,n].postln;
                             if(lastDot != p) {
                                 if(dotSize>0) {
-                                    Pen.fillColor = this.parmap(ev,plot.dotColor);
+                                    Pen.fillColor = this.parmapClip(ev,plot.dotColor,n);
                                     Pen.addArc(p, dotSize, 0, 2pi);
                                     Pen.fill;
                                 };
                                 if(plot.valueLabel.notNil) {
-                                    Pen.font = this.parmap(ev,plot.valueLabelFont);
-                                    Pen.color = this.parmap(ev,plot.valueLabelColor);
-                                    Pen.stringAtPoint(this.parmap(ev,plot.valueLabel).asArray.clipAt(n).asString,p + plot.valueLabelOffset);
+                                    Pen.font = this.parmapClip(ev,plot.valueLabelFont,n);
+                                    Pen.color = this.parmapClip(ev,plot.valueLabelColor,n);
+                                    Pen.stringAtPoint(this.parmapClip(ev,plot.valueLabel,n).asString,p + plot.valueLabelOffset);
                                 };
                             };
                             lastDot = p;
@@ -321,22 +328,20 @@ PatternPlotter {
                     yofs = yofs + h + plot.padding;
                 };
 
-//                if(ev.delta>0) {
-                    if(tickFullHeight) {
-                        topY = 0;
-                        bottomY = bounds.height;
-                    };
-                    if(topY >= 0) {
-                        Pen.line(x@topY,x@bottomY);
-                        Pen.width = 1;
-                        Pen.strokeColor = tickColor;
-                        Pen.lineDash = tickDash;
-                        Pen.stroke;
-                    };
-  //              };
+                if(tickFullHeight) {
+                    topY = 0;
+                    bottomY = bounds.height;
+                };
+                if(topY >= 0) {
+                    Pen.line(x@topY,x@bottomY);
+                    Pen.width = 1;
+                    Pen.strokeColor = tickColor;
+                    Pen.lineDash = tickDash;
+                    Pen.stroke;
+                };
                 t = t + ev.delta;
             }
-        }
+        }}
     }
 }
 
