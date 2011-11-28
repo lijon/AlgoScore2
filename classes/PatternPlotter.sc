@@ -305,7 +305,6 @@ PatternPlotter {
                                 }
                             );
                             dotSize = this.parmapClip(ev,plot.dotSize,n);
-                            [dotSize,n].postln;
                             if(lastDot != p) {
                                 if(dotSize>0) {
                                     Pen.fillColor = this.parmapClip(ev,plot.dotColor,n);
