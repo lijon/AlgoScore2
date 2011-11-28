@@ -43,6 +43,7 @@ plotSpec keys:
     labelFont   font of label
     baselineColor color of horizontal bottom line, nil to hide
     baselineDash line dash for horizontal bottom line
+    valueLabelNoRepeat if true, only draw value label if it changed from last data point
     plotID      only plot this if the pattern event has a plotID that is nil or matches this
 
   dynamic parameters:
@@ -75,7 +76,8 @@ internal plotSpec keys:
 
     state       saved state from last data point
     baseline    pixel position of baseline
-    usedKeys    Set of pattern event keys used by this plotSpec
+    usedKeys    a Set of pattern event keys used by this plotSpec
+    lastValueString the value label string from last data point
 
 example:
 
@@ -139,6 +141,7 @@ PatternPlotter {
             valueLabelColor: Color(0.6,0.3,0.4),
             valueLabelFont: Font.monospace(9),
             valueLabelOffset: 4 @ -12,
+            valueLabelNoRepeat: false,
             dash: FloatArray[1,0],
             color: Color.black,
             baselineDash: FloatArray[1,0],
@@ -239,6 +242,7 @@ PatternPlotter {
             };
 
             plot.state = nil;
+            plot.lastValueString = nil;
 
             yofs = yofs + plot.height+plot.padding;
         };
@@ -248,6 +252,7 @@ PatternPlotter {
             {ev.isKindOf(SimpleNumber)} { t = t + ev }
             {ev.class==Event} { ev.use {
                 var topY= -1, bottomY= inf;
+                var str;
                 var id = ev.plotID;
                 var doPlot = not(ev.type==\rest or: {ev.detunedFreq.value.isRest});
 
@@ -280,7 +285,7 @@ PatternPlotter {
                                 },
                                 \steps, {
                                     old !? {
-                                        Pen.line(old, old.x@p.y);
+                                        Pen.line(old, p.x@old.y);
                                         Pen.lineTo(p);
                                         Pen.stroke;
                                     };
@@ -311,10 +316,12 @@ PatternPlotter {
                                     Pen.addArc(p, dotSize, 0, 2pi);
                                     Pen.fill;
                                 };
-                                if(plot.valueLabel.notNil) {
+                                if(plot.valueLabel.notNil and:
+                                {(str=this.parmapClip(ev,plot.valueLabel,n).asString)!=plot.lastValueString}) {
                                     Pen.font = this.parmapClip(ev,plot.valueLabelFont,n);
                                     Pen.color = this.parmapClip(ev,plot.valueLabelColor,n);
-                                    Pen.stringAtPoint(this.parmapClip(ev,plot.valueLabel,n).asString,p + plot.valueLabelOffset);
+                                    Pen.stringAtPoint(str,p + this.parmapClip(ev,plot.valueLabelOffset,n));
+                                    if(plot.valueLabelNoRepeat) {plot.lastValueString = str};
                                 };
                             };
                             lastDot = p;
