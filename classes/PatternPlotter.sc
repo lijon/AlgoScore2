@@ -54,6 +54,7 @@ plotSpec keys:
     padding     top and bottom padding (pixels)
     dotSize     size of data point circle (pixels)
     dotColor    color of data point circle (Color)
+    dotShape    \circle or \square (Symbol)
     dash        line dash (FloatArray)
     color       line color (Color)
     valueLabel  value to print at data point
@@ -135,8 +136,9 @@ PatternPlotter {
             label: nil,
             lineWidth: 1,
             padding: 20,
-            dotSize: 2,
+            dotSize: 2.5,
             dotColor: Color.black,
+            dotShape: \circle,
             labelColor: Color(0.3,0.6,0.4),
             labelFont: Font.monospace(9),
             valueLabel: nil,
@@ -317,7 +319,10 @@ PatternPlotter {
                             if(lastP != p) {
                                 if(dotSize>0) {
                                     Pen.fillColor = this.parmapClip(ev,plot.dotColor,n);
-                                    Pen.addArc(p, dotSize, 0, 2pi);
+                                    switch(this.parmapClip(ev,plot.dotShape,n),
+                                        \square, { Pen.addRect(Rect.fromPoints(p-dotSize,p+dotSize)) },
+                                        { Pen.addArc(p, dotSize, 0, 2pi) } //default is circle
+                                    );
                                     Pen.fill;
                                 };
                                 if(plot.valueLabel.notNil and:
