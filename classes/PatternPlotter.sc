@@ -320,8 +320,8 @@ PatternPlotter {
                                     old = nil;
                                 }
                             );
-                            dotSize = this.parmapClip(ev,plot.dotSize,n);
                             if(lastP != p) {
+                                dotSize = this.parmapClip(ev,plot.dotSize,n);
                                 if(dotSize>0) {
                                     Pen.fillColor = this.parmapClip(ev,plot.dotColor,n);
                                     switch(this.parmapClip(ev,plot.dotShape,n),
