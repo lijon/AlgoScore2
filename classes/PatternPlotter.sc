@@ -92,7 +92,7 @@ example:
         ),
         [
             (y: \freq -> [250,550,\exp], valueLabel: \freq -> _.round(0.1), dotSize: \amp -> _.linlin(0,1,1,8), dotColor: Color(0,0,0,0.4), \lineWidth:3),
-            (y: \amp -> [0,1], type: \bargraph, height: 50, baselineColor: Color.grey),
+            (y: \amp -> [0,1], type: \bargraph, height: 50, baselineColor: Color.grey, dotShape: \square),
             (y: \foo -> [0,10], dotSize: 3, type: \linear, height: 100, valueLabel: \foo -> nil)
         ]
     ).length_(12).tickFullHeight_(false).gui;
@@ -245,7 +245,7 @@ PatternPlotter {
                 Pen.stroke;
             };
 
-            plot.state = nil;
+            plot.state = IdentityDictionary.new;
             plot.lastValueString = nil;
 
             yofs = yofs + plot.height+plot.padding;
@@ -266,14 +266,16 @@ PatternPlotter {
                 plotSpecs.do {|plot|
                     var h = plot.height;
                     var y, y1, lastP, lastP1, dotSize;
+                    var state;
 
                     yofs = yofs + plot.padding;
                     if(id.isNil or: {id==plot.plotID} and: {doPlot and: this.checkKeys(ev,plot)}) {
                         y = bounds.height-round(yofs+(this.parmap(ev,plot.y)*h))+0.5;
                         y1 = plot.y1 !? {bounds.height-round(yofs+(this.parmap(ev,plot.y1)*h))+0.5} ? y;
+                        state = plot.state[id.asSymbol];
 
-                        plot.state = plot.state.size.max(y.size).max(y1.size).collect {|n|
-                            var old = plot.state !? {plot.state.clipAt(n)};
+                        plot.state[id.asSymbol] = state.size.max(y.size).max(y1.size).collect {|n|
+                            var old = state !? {state.clipAt(n)};
                             var p = x @ y.clipAt(n);
                             var p1 = (ev[plot.lenKey].value * xscale + x) @ y1.clipAt(n);
 
