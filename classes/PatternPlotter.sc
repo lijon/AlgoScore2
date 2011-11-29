@@ -49,6 +49,7 @@ plotSpec keys:
   dynamic parameters:
 
     y           vertical position of data point (in the range 0.0 - 1.0)
+    y1          vertical position for end point for type \levels
     lineWidth   line width (pixels)
     padding     top and bottom padding (pixels)
     dotSize     size of data point circle (pixels)
@@ -127,6 +128,7 @@ PatternPlotter {
     init {|aPattern, aPlotSpecs|
         defaults = (
             y: \freq -> ControlSpec(20,20000,\exp),
+            y1: nil,
             height: 200,
             type: \levels,
             lenKey: \sustain,
@@ -261,15 +263,17 @@ PatternPlotter {
 
                 plotSpecs.do {|plot|
                     var h = plot.height;
-                    var y, lastDot, dotSize;
+                    var y, y1, lastP, lastP1, dotSize;
 
                     yofs = yofs + plot.padding;
                     if(id.isNil or: {id==plot.plotID} and: {doPlot and: this.checkKeys(ev,plot)}) {
-                        y = (bounds.height-round(yofs+(this.parmap(ev,plot.y)*h))+0.5);
+                        y = bounds.height-round(yofs+(this.parmap(ev,plot.y)*h))+0.5;
+                        y1 = plot.y1 !? {bounds.height-round(yofs+(this.parmap(ev,plot.y1)*h))+0.5} ? y;
 
-                        plot.state = max(plot.state.size,y.size).collect {|n|
+                        plot.state = plot.state.size.max(y.size).max(y1.size).collect {|n|
                             var old = plot.state !? {plot.state.clipAt(n)};
                             var p = x @ y.clipAt(n);
+                            var p1 = (ev[plot.lenKey].value * xscale + x) @ y1.clipAt(n);
 
                             Pen.strokeColor = this.parmapClip(ev,plot.color,n);
                             Pen.width = this.parmapClip(ev,plot.lineWidth,n);
@@ -292,14 +296,14 @@ PatternPlotter {
                                     old = p;
                                 },
                                 \levels, {
-                                    if(lastDot != p) {
-                                        Pen.line(p, p + ((ev[plot.lenKey].value * xscale) @ 0));
+                                    if(lastP != p or: {lastP1 != p1}) {
+                                        Pen.line(p, p1);
                                         Pen.stroke;
                                     };
                                     old = nil;
                                 },
                                 \bargraph, {
-                                    if(lastDot != p) {
+                                    if(lastP != p) {
                                         Pen.line(p.x @ plot.baseline, p);
                                         Pen.stroke;
                                     };
@@ -310,7 +314,7 @@ PatternPlotter {
                                 }
                             );
                             dotSize = this.parmapClip(ev,plot.dotSize,n);
-                            if(lastDot != p) {
+                            if(lastP != p) {
                                 if(dotSize>0) {
                                     Pen.fillColor = this.parmapClip(ev,plot.dotColor,n);
                                     Pen.addArc(p, dotSize, 0, 2pi);
@@ -324,7 +328,8 @@ PatternPlotter {
                                     if(plot.valueLabelNoRepeat) {plot.lastValueString = str};
                                 };
                             };
-                            lastDot = p;
+                            lastP = p;
+                            lastP1 = p1;
                             if(p.y < bottomY) { bottomY = p.y };
                             if(p.y > topY) { topY = p.y };
 
