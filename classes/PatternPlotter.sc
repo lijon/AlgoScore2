@@ -91,7 +91,7 @@ example:
             \dur, Pseq([0.5,0.25,1,0.25],inf)
         ),
         [
-            (y: \freq -> [250,550,\exp], valueLabel: \freq -> _.round(0.1), dotSize: \amp -> _.linlin(0,1,1,8), dotColor: Color(0,0,0,0.4), \lineWidth:3),
+            (y: \freq -> [250,550,\exp], valueLabel: \freq -> _.round(0.1), dotSize: \amp -> _.linlin(0,1,1,8), dotColor: Color(0,0,0,0.4), \lineWidth:2),
             (y: \amp -> [0,1], type: \bargraph, height: 50, baselineColor: Color.grey, dotShape: \square),
             (y: \foo -> [0,10], dotSize: 3, type: \linear, height: 100, valueLabel: \foo -> nil)
         ]
@@ -270,17 +270,20 @@ PatternPlotter {
 
                     yofs = yofs + plot.padding;
                     if(id.isNil or: {id==plot.plotID} and: {doPlot and: this.checkKeys(ev,plot)}) {
-                        y = bounds.height-round(yofs+(this.parmap(ev,plot.y)*h))+0.5;
-                        y1 = plot.y1 !? {bounds.height-round(yofs+(this.parmap(ev,plot.y1)*h))+0.5} ? y;
+                        y = bounds.height-round(yofs+(this.parmap(ev,plot.y)*h));
+                        y1 = plot.y1 !? {bounds.height-round(yofs+(this.parmap(ev,plot.y1)*h))} ? y;
                         state = plot.state[id.asSymbol];
 
                         plot.state[id.asSymbol] = state.size.max(y.size).max(y1.size).collect {|n|
                             var old = state !? {state.clipAt(n)};
                             var p = x @ y.clipAt(n);
                             var p1 = (ev[plot.lenKey].value * xscale + x) @ y1.clipAt(n);
+                            var lw = this.parmapClip(ev,plot.lineWidth,n);
+
+                            if(lw.asInteger.odd) { p.y = p.y + 0.5; p1.y = p1.y + 0.5 };
 
                             Pen.strokeColor = this.parmapClip(ev,plot.color,n);
-                            Pen.width = this.parmapClip(ev,plot.lineWidth,n);
+                            Pen.width = lw;
                             Pen.lineDash = this.parmapClip(ev,plot.dash,n);
 
                             switch(plot.type,
