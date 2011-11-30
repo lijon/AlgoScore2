@@ -8,7 +8,7 @@ p = PatternController {|f=200, a=0.5|
     )
 };
 )
-p.play
+p.pattern.trace.play
 
 p.set(\f, Pseq([200,300,400,500],inf))
 p.set(\f, 300)
@@ -17,8 +17,7 @@ p.set(\f, Pwhite(100,700,inf))
 p.inputs // returns [\f, \a]
 p.values
 
-p.stop
-
+p.player.stop
 
 (
 p = PatternController {|f=200, a=0.5|
@@ -42,11 +41,6 @@ p.set(\f, Pseq([200,300,400,500],inf)/2)
 p.set(\a, 0.4)
 p.set(\f, Pwhite(100,700,inf).round(50))
 
-x = Pseq([1,2,3,4],inf).asStream
-y = x.copy
-x.next
-y.next
-
 // in some cases one must wrap it in a Pfunc and use arg.source:
 (
 p = PatternController {|f=2|
@@ -56,9 +50,10 @@ p = PatternController {|f=2|
     )
 };
 )
-p.play
+p.pattern.trace.play
 
 p.set(\f, 7)
+p.set(\f, 0)
 
 
 */
@@ -92,7 +87,10 @@ PatternController {
     }
 
     set {|...args|
-        args.pairsDo {|k,v| values[k].source=v};
+        args.pairsDo {|k,v|
+            if(v.isKindOf(Function)) { v = Pfunc(v) };
+            values[k].source = v;
+        };
     }
 }
 
