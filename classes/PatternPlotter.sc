@@ -130,7 +130,7 @@ PatternPlotter {
         defaults = (
             y: \freq -> ControlSpec(20,20000,\exp),
             y1: nil,
-            height: 200,
+            height: 150,
             type: \levels,
             lenKey: \sustain,
             label: nil,
@@ -330,6 +330,10 @@ PatternPlotter {
                                     );
                                     Pen.fill;
                                 };
+                                if(dotSize>0 or: {plot.type != \dots}) {
+                                    if(p.y < bottomY) { bottomY = p.y };
+                                    if(p.y > topY) { topY = p.y };
+                                };
                                 if(plot.valueLabel.notNil and:
                                 {(str=this.parmapClip(ev,plot.valueLabel,n).asString)!=plot.lastValueString}) {
                                     Pen.font = this.parmapClip(ev,plot.valueLabelFont,n);
@@ -340,8 +344,6 @@ PatternPlotter {
                             };
                             lastP = p;
                             lastP1 = p1;
-                            if(p.y < bottomY) { bottomY = p.y };
-                            if(p.y > topY) { topY = p.y };
 
                             old;
                         }.clipExtend(y.size);
