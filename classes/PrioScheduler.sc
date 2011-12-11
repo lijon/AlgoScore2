@@ -2,18 +2,8 @@
 PrioScheduler - allow control of order between items/routines/patterns when events are scheduled on the same time.
 
 q = PrioScheduler();
-myThing.play(q.prio(10));
-
-alternatives:
-A. (current) schedule 'this' on tempoclock once for each item scheduled on this.
-it means we must avoid scheduling 'this' more than one time at the same time.
-we do this by saving current time in an instance var and return early from this.awake if inBeats==current
-
-B. keep only one schedule of 'this' on tempoclock at a time,
-let this.awake reschedule itself on tempoclock for next awake time.
-we could have a 'first' boolean that only starts the scheduling in schedAbs the first time..
-but that breaks if we try to schedule another item with nearer wakeup time.
-we could detect this, but how would we remove/unschedule/move the old one? that's not possible at the moment.
+a.play(q.prio(1)); // a will always evaluate before b in case they wake up at the same time
+b.play(q.prio(2));
 
 EXAMPLES:
 
@@ -55,10 +45,22 @@ b = Pbind(
 }.fork(TempoClock);
 )
 
+implementation alternatives:
+A. (current) schedule 'this' on tempoclock once for each item scheduled on this.
+it means we must avoid scheduling 'this' more than one time at the same time.
+we do this by saving current time in an instance var and return early from this.awake if inBeats==current
+
+B. keep only one schedule of 'this' on tempoclock at a time,
+let this.awake reschedule itself on tempoclock for next awake time.
+we could have a 'first' boolean that only starts the scheduling in schedAbs the first time..
+but that breaks if we try to schedule another item with nearer wakeup time.
+we could detect this, but how would we remove/unschedule/move the old one? that's not possible at the moment.
+but, we could combine this with A above and return early from awake?
+
 */
 
 PrioScheduler {
-    var <clock, <queue, current;
+    var <clock, <queue, current, autolevel=0;
 
     *new {|clock|
         ^super.new.init(clock);
@@ -74,8 +76,12 @@ PrioScheduler {
         ^PrioClockWrapper(this,level);
     }
 
+    auto {
+        autolevel = autolevel + 1;
+        ^PrioClockWrapper(this,autolevel);
+    }
+
     schedAbs {|time, task, prio=0|
-        var top = queue.topPriority;
         queue.put(time, [task, prio]);
         clock.schedAbs(time,this);
     }
