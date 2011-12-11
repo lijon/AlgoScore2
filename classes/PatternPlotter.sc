@@ -10,7 +10,7 @@ usage:
     where pattern is an event pattern and plotSpecs an array of Event's describing what and how to plot.
 
     p.bounds    returns the bounds of the plot in pixels, as a Rect with 0@0 as origin
-    p.draw      draw the plots. call this inside your userView
+    p.draw(pen) draw the plots. call this inside your userView
 
     p.gui       create a window with a view that draws the plots
 
@@ -218,7 +218,7 @@ PatternPlotter {
         bounds.height = height;
     }
 
-    draw {
+    draw {|pen=(Pen)|
         var stream = pattern.asStream;
         var t = 0;
         var x;
@@ -231,18 +231,18 @@ PatternPlotter {
             y2 = round(bounds.height-yofs-plot.height-plot.padding)+0.5;
 
             lbl !? {
-                Pen.font = plot.labelFont;
-                Pen.color = plot.labelColor;
-                Pen.stringAtPoint(lbl,(labelMargin)@y2); // print label in plot
+                pen.font = plot.labelFont;
+                pen.color = plot.labelColor;
+                pen.stringAtPoint(lbl,(labelMargin)@y2); // print label in plot
             };
 
             plot.baseline = bounds.height - yofs + 0.5;
             plot.baselineColor !? {
-                Pen.line(leftMargin@plot.baseline,(length*xscale+leftMargin)@plot.baseline);
-                Pen.width = 1;
-                Pen.strokeColor = plot.baselineColor;
-                Pen.lineDash = plot.baselineDash;
-                Pen.stroke;
+                pen.line(leftMargin@plot.baseline,(length*xscale+leftMargin)@plot.baseline);
+                pen.width = 1;
+                pen.strokeColor = plot.baselineColor;
+                pen.lineDash = plot.baselineDash;
+                pen.stroke;
             };
 
             plot.state = IdentityDictionary.new;
@@ -282,37 +282,37 @@ PatternPlotter {
 
                             if(lw.asInteger.odd) { p.y = p.y + 0.5; p1.y = p1.y + 0.5 };
 
-                            Pen.strokeColor = this.parmapClip(ev,plot.color,n);
-                            Pen.width = lw;
-                            Pen.lineDash = this.parmapClip(ev,plot.dash,n);
+                            pen.strokeColor = this.parmapClip(ev,plot.color,n);
+                            pen.width = lw;
+                            pen.lineDash = this.parmapClip(ev,plot.dash,n);
 
                             switch(plot.type,
                                 \linear, {
                                     old !? {
-                                        Pen.line(old, p);
-                                        Pen.stroke;
+                                        pen.line(old, p);
+                                        pen.stroke;
                                     };
                                     old = p;
                                 },
                                 \steps, {
                                     old !? {
-                                        Pen.line(old, p.x@old.y);
-                                        Pen.lineTo(p);
-                                        Pen.stroke;
+                                        pen.line(old, p.x@old.y);
+                                        pen.lineTo(p);
+                                        pen.stroke;
                                     };
                                     old = p;
                                 },
                                 \levels, {
                                     if(lastP != p or: {lastP1 != p1}) {
-                                        Pen.line(p, p1);
-                                        Pen.stroke;
+                                        pen.line(p, p1);
+                                        pen.stroke;
                                     };
                                     old = nil;
                                 },
                                 \bargraph, {
                                     if(lastP != p) {
-                                        Pen.line(p.x @ plot.baseline, p);
-                                        Pen.stroke;
+                                        pen.line(p.x @ plot.baseline, p);
+                                        pen.stroke;
                                     };
                                     old = nil;
                                 },
@@ -323,12 +323,12 @@ PatternPlotter {
                             if(lastP != p) {
                                 dotSize = this.parmapClip(ev,plot.dotSize,n);
                                 if(dotSize>0) {
-                                    Pen.fillColor = this.parmapClip(ev,plot.dotColor,n);
+                                    pen.fillColor = this.parmapClip(ev,plot.dotColor,n);
                                     switch(this.parmapClip(ev,plot.dotShape,n),
-                                        \square, { Pen.addRect(Rect.fromPoints(p-dotSize,p+dotSize)) },
-                                        { Pen.addArc(p, dotSize, 0, 2pi) } //default is circle
+                                        \square, { pen.addRect(Rect.fromPoints(p-dotSize,p+dotSize)) },
+                                        { pen.addArc(p, dotSize, 0, 2pi) } //default is circle
                                     );
-                                    Pen.fill;
+                                    pen.fill;
                                 };
                                 if(dotSize>0 or: {plot.type != \dots}) {
                                     if(p.y < bottomY) { bottomY = p.y };
@@ -336,9 +336,9 @@ PatternPlotter {
                                 };
                                 if(plot.valueLabel.notNil and:
                                 {(str=this.parmapClip(ev,plot.valueLabel,n).asString)!=plot.lastValueString}) {
-                                    Pen.font = this.parmapClip(ev,plot.valueLabelFont,n);
-                                    Pen.color = this.parmapClip(ev,plot.valueLabelColor,n);
-                                    Pen.stringAtPoint(str,p + this.parmapClip(ev,plot.valueLabelOffset,n));
+                                    pen.font = this.parmapClip(ev,plot.valueLabelFont,n);
+                                    pen.color = this.parmapClip(ev,plot.valueLabelColor,n);
+                                    pen.stringAtPoint(str,p + this.parmapClip(ev,plot.valueLabelOffset,n));
                                     if(plot.valueLabelNoRepeat) {plot.lastValueString = str};
                                 };
                             };
@@ -356,11 +356,11 @@ PatternPlotter {
                     bottomY = bounds.height;
                 };
                 if(topY >= 0) {
-                    Pen.line(x@topY,x@bottomY);
-                    Pen.width = 1;
-                    Pen.strokeColor = tickColor;
-                    Pen.lineDash = tickDash;
-                    Pen.stroke;
+                    pen.line(x@topY,x@bottomY);
+                    pen.width = 1;
+                    pen.strokeColor = tickColor;
+                    pen.lineDash = tickDash;
+                    pen.stroke;
                 };
                 t = t + ev.delta;
             }
