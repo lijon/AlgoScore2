@@ -1,3 +1,76 @@
+/*
+
+WORK IN PROGRESS
+
+todo:
+
+* simple western notation
+- clef
+- stafflines
+- accidentals (no key)
+- note heads
+- stems going to a duration bar
+- notes with same duration are grouped into a chord
+
+* allow passing plotDefaults in Event too
+
+* show we merge plotID and plotRow? currently they have kind of the same purpose..
+and/or can we find some way to automate this?
+like detecting Ppar and assigning an increasing number..
+
+* move tickLine stuff into plotSpec (or plotDefaults only),
+or have a separate plotSettings for stuff related to all plotSpecs?
+
+**** instead of plotSettings, just pass it in the Event:
+plotTickWidth, etc..
+
+* custom graphics in special cases, we could provide a drawing func and type: \custom?
+
+* Problem with Ppar!
+since the events are intermingled, we are switching between several plotSpecs.
+
+This means it is detected as "new plot unit", printing labels and baseline again, etc..
+
+Solution: we need to keep an orgPlotSpecs (and orgPlotSettings, etc) for each children in the Ppar. But how can we detect that these are different?
+Perhaps plotSettings can contain a 'row' value?
+
+* how to handle vertical stacking when using multiple plotSpecs in Ppar?
+we could start with a simple "yofs" in plotSettings,
+but would be nicer if this could be handled automagically..
+when we have the 'row' value, then maybe we can use this to automatically adjust vertical stacking?
+each time we store the old plotSpec for a specific row, we can also store the height.
+but then, the rows can come in different order.
+
+* pagination for printing, how?
+
+* p.bounds doesn't work anymore, since we now pass plotSpecs in the event.
+This means plotSpecs can change anytime, and therefore the height.
+Also width is hard to know except by running through the whole pattern once..
+
+we could add a function to run through only the plotSpecs in the event stream, without actually drawing.
+
+* representing a composition at macro level, like blocks with different names/colors.
+introducing plotSettings (see above) could help with this, there we could give a name for the whole block. We'd need to wait until the next block (or end) before drawing it, so we know the positions..
+
+* baseline needs to be drawn for each "unit" (unique plotSpec) too
+
+* event ticks are not drawn between par patterns,
+sometimes this is what we want, but sometimes not..
+
+* plotting Synth outputs
+for example, the results of different LFNoise's, LFOs, Envelopes, etc..
+this would need to happen in realtime.
+1. write these to busses and poll these busses continuously lang-side
+or
+2. use SendTrig to send these to the language
+
+* should we multichannel expand on more than y and y1?
+for example, dotSize..
+one could also work around it also for fixed y position:
+y: \mChKey -> {0.5}
+
+*/
+
 /*************************************************************************
     PatternPlotter - Jonatan Liljedahl <lijon@kymatica.com>
 
@@ -13,6 +86,9 @@ usage:
     p.draw(pen) draw the plots. call this inside your userView
 
     p.gui       create a window with a view that draws the plots
+
+NOTE: p.bounds not working anymore, since plotSpecs are now passed in the events (so that they can change) meaning we don't know the plotSpecs in advance..
+not sure how to handle that.
 
 properties:
 
@@ -116,12 +192,12 @@ PatternPlotter {
         <>tickDash,
         <>tickFullHeight = true;
 
-    var <>pattern, <>defaults, <plotSpecs;
+    var <>pattern, <>defaults, <plotSpecs;//, orgPlotSpecs;
 
     var <bounds;
 
-    *new {|pattern,plotSpecs|
-        ^super.new.init(pattern, plotSpecs);
+    *new {|pattern,defaults,plotSpecs|
+        ^super.new.init(pattern, defaults, plotSpecs);
     }
 
     gui {
@@ -132,7 +208,7 @@ PatternPlotter {
         ^win;
     }
 
-    init {|aPattern, aPlotSpecs|
+    init {|aPattern, aDefaults, aPlotSpecs|
         defaults = (
             y: \freq -> ControlSpec(20,20000,\exp),
             y1: nil,
@@ -154,15 +230,21 @@ PatternPlotter {
             valueLabelNoRepeat: false,
             dash: FloatArray[inf,1], //hack
             color: Color.black,
-            baselineDash: FloatArray[1,0],
-            baselineColor: nil
+            baselineDash: FloatArray[inf,1],
+            baselineColor: nil,
+            yOfs: 0, //better to have in plotSettings?
         );
-        bounds = Rect(0,0,0,0);
+        if(aDefaults.notNil) {
+            defaults.putAll(aDefaults);
+        };
+        bounds = Rect(0,0,800,500);
         tickColor = Color(0,0,0.5,0.5);
         tickDash = FloatArray[1,2];
         this.length = 16;
         this.pattern = aPattern;
-        this.plotSpecs = aPlotSpecs;
+        if(aPlotSpecs.notNil) {
+            this.pattern = aPattern <> (plotSpecs:aPlotSpecs);
+        };
         this.defaultEvent = Event.default;
     }
 
@@ -216,6 +298,7 @@ PatternPlotter {
 
     plotSpecs_ {|aPlotSpecs|
         var height = 0;
+//        orgPlotSpecs = aPlotSpecs;
         plotSpecs = aPlotSpecs.reverse;
         plotSpecs.do {|p|
             p.parent = defaults;
@@ -246,35 +329,12 @@ PatternPlotter {
         var stream = pattern.asStream;
         var t = 0;
         var x;
-        var yofs = 0;
+        var yofs;
         var ev;
-        plotSpecs.do {|plot|
-            var y2;
-//            var lbl = plot.label ?? {if(plot.y.class==Association) {plot.y.key}};
-            yofs = yofs + plot.padding;
-            y2 = round(bounds.height-yofs-plot.height-plot.padding)+0.5;
 
-            plot.label !? {
-                pen.font = plot.labelFont;
-                pen.color = plot.labelColor;
-                pen.stringAtPoint(plot.label,(labelMargin)@y2); // print label in plot
-            };
+        var oldPlotSpec = nil;
 
-            plot.baseline = bounds.height - yofs + 0.5;
-            plot.baselineColor !? {
-                pen.line(leftMargin@plot.baseline,(length*xscale+leftMargin)@plot.baseline);
-                pen.width = 1;
-                pen.strokeColor = plot.baselineColor;
-                pen.lineDash = plot.baselineDash;
-                pen.stroke;
-            };
-
-            plot.state = IdentityDictionary.new;
-            plot.lastValueString = nil;
-
-            yofs = yofs + plot.height+plot.padding;
-        };
-
+        var orgPlotSpecs = IdentityDictionary.new;
         while { ev = stream.next(defaultEvent); t<length and: {ev.notNil} } {
             case
             {ev.isKindOf(SimpleNumber)} { t = t + ev }
@@ -282,12 +342,53 @@ PatternPlotter {
             {ev.class===Event} { ev.use {
                 var topY= -1, bottomY= inf;
                 var str;
-                var id = ev.plotID ?? {\default};
-//                var doPlot = not(ev.type==\rest or: {ev.detunedFreq.value.isRest});
-//                var doPlot = ev.isRest.not;
+                var row = ev.plotRow ? 0;
+                var id = ev.plotID ? row;
+                var newSpecs = ev.plotSpecs;
+                var ofs = neg( ev.plotOfs ? 0 );
 
-                yofs = 0;
                 x = round(t * xscale) + 0.5 + leftMargin;
+
+                if(newSpecs !== oldPlotSpec) {
+                    this.plotSpecs = newSpecs;
+                };
+
+                if(newSpecs.notNil and: {newSpecs!==orgPlotSpecs[row]}) {
+//                    this.plotSpecs = newSpecs;
+//                    this.plotSpecs.debug("NEW SPECS");
+                    //bounds.height = bounds.height + ofs; // hmm
+                    orgPlotSpecs[row] = newSpecs; // for comparision only
+                    yofs = ofs;
+                    plotSpecs.do {|plot|
+                        var y2;
+                        yofs = yofs + plot.padding;
+
+                        y2 = round(bounds.height-yofs-plot.height-plot.padding)+0.5;
+
+                        plot.label !? {
+                            pen.font = plot.labelFont;
+                            pen.color = plot.labelColor;
+//                            pen.stringAtPoint(plot.label,(labelMargin)@y2);
+                            pen.stringAtPoint(plot.label,x@y2);
+                        };
+
+                        plot.baseline = bounds.height - yofs + 0.5;
+                        plot.baselineColor !? {
+                            pen.line(leftMargin@plot.baseline,(length*xscale+leftMargin)@plot.baseline);
+                            pen.width = 1;
+                            pen.strokeColor = plot.baselineColor;
+                            pen.lineDash = plot.baselineDash;
+                            pen.stroke;
+                        };
+
+                        plot.state = IdentityDictionary.new;
+                        plot.lastValueString = nil;
+
+                        yofs = yofs + plot.height+plot.padding;
+                    };
+                };
+
+                yofs = ofs;
 
                 plotSpecs.do {|plot|
                     var h = plot.height;
@@ -386,8 +487,9 @@ PatternPlotter {
                 };
 
                 if(tickFullHeight) {
-                    topY = 0;
-                    bottomY = bounds.height;
+                    topY = ofs.neg;
+                    bottomY = bounds.height + ofs.neg;
+//                    [topY,bottomY].debug("top and bottom");
                 };
                 if(topY >= 0) {
                     pen.line(x@topY,x@bottomY);
