@@ -14,32 +14,20 @@ todo:
 
 * allow passing plotDefaults in Event too
 
-* show we merge plotID and plotRow? currently they have kind of the same purpose..
-and/or can we find some way to automate this?
-like detecting Ppar and assigning an increasing number..
-
-* move tickLine stuff into plotSpec (or plotDefaults only),
-or have a separate plotSettings for stuff related to all plotSpecs?
-
-**** instead of plotSettings, just pass it in the Event:
+* move tickLine stuff into the event:
 plotTickWidth, etc..
 
 * custom graphics in special cases, we could provide a drawing func and type: \custom?
 
-* Problem with Ppar!
-since the events are intermingled, we are switching between several plotSpecs.
+* allowing overlaying (reusing same plotSpec row) of plotSpec,
+that is, it should not increment y before drawing..
 
-This means it is detected as "new plot unit", printing labels and baseline again, etc..
+* automatic vertical stacking when using multiple plotSpecs in Ppar?
+using plotRow value.. need to know the height of each parallell plotSpec,
+which is hard since the rows can come in different order..?
+perhaps when we've solved the p.bounds issue?
 
-Solution: we need to keep an orgPlotSpecs (and orgPlotSettings, etc) for each children in the Ppar. But how can we detect that these are different?
-Perhaps plotSettings can contain a 'row' value?
-
-* how to handle vertical stacking when using multiple plotSpecs in Ppar?
-we could start with a simple "yofs" in plotSettings,
-but would be nicer if this could be handled automagically..
-when we have the 'row' value, then maybe we can use this to automatically adjust vertical stacking?
-each time we store the old plotSpec for a specific row, we can also store the height.
-but then, the rows can come in different order.
+* time grid
 
 * pagination for printing, how?
 
@@ -49,13 +37,14 @@ Also width is hard to know except by running through the whole pattern once..
 
 we could add a function to run through only the plotSpecs in the event stream, without actually drawing.
 
+and we should have a bounds for each plotSpec..
+
 * representing a composition at macro level, like blocks with different names/colors.
 introducing plotSettings (see above) could help with this, there we could give a name for the whole block. We'd need to wait until the next block (or end) before drawing it, so we know the positions..
 
-* baseline needs to be drawn for each "unit" (unique plotSpec) too
+perhaps we could also put things like this in
 
-* event ticks are not drawn between par patterns,
-sometimes this is what we want, but sometimes not..
+* baseline needs to be drawn for each "unit" (unique plotSpec) too.
 
 * plotting Synth outputs
 for example, the results of different LFNoise's, LFOs, Envelopes, etc..
@@ -190,6 +179,7 @@ PatternPlotter {
 
     var <>tickColor,
         <>tickDash,
+        <>tickTimeTolerance = 0.001,
         <>tickFullHeight = true;
 
     var <>pattern, <>defaults, <plotSpecs;//, orgPlotSpecs;
@@ -232,7 +222,6 @@ PatternPlotter {
             color: Color.black,
             baselineDash: FloatArray[inf,1],
             baselineColor: nil,
-            yOfs: 0, //better to have in plotSettings?
         );
         if(aDefaults.notNil) {
             defaults.putAll(aDefaults);
@@ -332,32 +321,45 @@ PatternPlotter {
         var yofs;
         var ev;
 
-        var oldPlotSpec = nil;
+        var topY= -1, bottomY= inf;
+        var drawTick = {
+            if(topY >= 0) {
+                pen.line(x@topY,x@bottomY);
+                pen.width = 1;
+                pen.strokeColor = tickColor;
+                pen.lineDash = tickDash;
+                pen.stroke;
+            }
+        };
 
-        var orgPlotSpecs = IdentityDictionary.new;
+        var lastPlotSpecs = nil;
+        var usedPlotSpecs = IdentitySet.new;
         while { ev = stream.next(defaultEvent); t<length and: {ev.notNil} } {
             case
             {ev.isKindOf(SimpleNumber)} { t = t + ev }
             {ev.isRest == true} { t = t + ev.dur } //?
             {ev.class===Event} { ev.use {
-                var topY= -1, bottomY= inf;
+//                var topY= -1, bottomY= inf;
                 var str;
-                var row = ev.plotRow ? 0;
-                var id = ev.plotID ? row;
+                var id = ev.plotID ? \default;
                 var newSpecs = ev.plotSpecs;
                 var ofs = neg( ev.plotOfs ? 0 );
 
                 x = round(t * xscale) + 0.5 + leftMargin;
 
-                if(newSpecs !== oldPlotSpec) {
+                if(newSpecs !== lastPlotSpecs) {
                     this.plotSpecs = newSpecs;
+                    lastPlotSpecs = newSpecs;
                 };
 
-                if(newSpecs.notNil and: {newSpecs!==orgPlotSpecs[row]}) {
+//                if(newSpecs.notNil and: {newSpecs!==orgPlotSpecs[row]}) {
+                // NOTE: instead of the Set, we could keep a draw counter (inst var) and set it in the plotSpec itself?
+                if(newSpecs.notNil and: {usedPlotSpecs.includes(newSpecs).not}) {
 //                    this.plotSpecs = newSpecs;
 //                    this.plotSpecs.debug("NEW SPECS");
                     //bounds.height = bounds.height + ofs; // hmm
-                    orgPlotSpecs[row] = newSpecs; // for comparision only
+//                    orgPlotSpecs[row] = newSpecs; // for comparision only
+                    usedPlotSpecs.add(newSpecs);
                     yofs = ofs;
                     plotSpecs.do {|plot|
                         var y2;
@@ -489,18 +491,17 @@ PatternPlotter {
                 if(tickFullHeight) {
                     topY = ofs.neg;
                     bottomY = bounds.height + ofs.neg;
-//                    [topY,bottomY].debug("top and bottom");
-                };
-                if(topY >= 0) {
-                    pen.line(x@topY,x@bottomY);
-                    pen.width = 1;
-                    pen.strokeColor = tickColor;
-                    pen.lineDash = tickDash;
-                    pen.stroke;
                 };
                 t = t + ev.delta;
-            }
-        }}
+                if(ev.delta > tickTimeTolerance) {
+                    drawTick.value;
+                    topY= -1;
+                    bottomY= inf;
+                }
+            }} // case event
+        }; // event iteration loop
+        // draw the last tick
+        drawTick.value;
     }
 }
 
