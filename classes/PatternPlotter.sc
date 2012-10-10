@@ -44,12 +44,15 @@ plotSpec keys:
     baselineColor color of horizontal bottom line, nil to hide
     baselineDash line dash for horizontal bottom line
     valueLabelNoRepeat if true, only draw value label if it changed from last data point
-    plotID      only plot this if the pattern event has a plotID that is nil or matches this
+    plotID      only plot this if the pattern event has a plotID that matches this,
+                can be nil to match all (default), or a collection to match several.
+                The id itself can be a symbol or number.
 
   dynamic parameters:
 
     y           vertical position of data point (in the range 0.0 - 1.0)
     y1          vertical position for end point for type \levels
+                y and y1 can multichannel expand if the associated event key returns an array
     lineWidth   line width (pixels)
     padding     top and bottom padding (pixels)
     dotSize     size of data point circle (pixels)
@@ -61,7 +64,7 @@ plotSpec keys:
     valueLabelColor color for above
     valueLabelFont font for above
     valueLabelOffset offset for above relative data point
-    
+
   the dynamic parameters can take a single value:
 
     value       (like 1.0 or Color.black or anything that responds to .value, like Function or Stream)
@@ -73,6 +76,8 @@ plotSpec keys:
     \keyName -> anything that responds to .asSpec
 
     A spec is .unmap'd to the range 0.0 - 1.0
+
+  also a plain symbol is the same as \theSymbol -> nil
 
 internal plotSpec keys:
 
@@ -101,10 +106,11 @@ example:
 
 PatternPlotter {
     var <length, // duration to plot (in seconds)
-        <xscale = 50, // time to pixels factor (time zoom level)
+        <xscale = 50, // pixels per second (time zoom level)
         <leftMargin = 10,
         <rightMargin = 10,
-        <>labelMargin = 10;
+        <>labelMargin = 10,
+        <>defaultEvent;
 
     var <>tickColor,
         <>tickDash,
@@ -146,7 +152,7 @@ PatternPlotter {
             valueLabelFont: Font.monospace(9),
             valueLabelOffset: 4 @ -12,
             valueLabelNoRepeat: false,
-            dash: FloatArray[1,0],
+            dash: FloatArray[inf,1], //hack
             color: Color.black,
             baselineDash: FloatArray[1,0],
             baselineColor: nil
@@ -157,10 +163,11 @@ PatternPlotter {
         this.length = 16;
         this.pattern = aPattern;
         this.plotSpecs = aPlotSpecs;
+        this.defaultEvent = Event.default;
     }
 
     parmap {|e,v|
-        ^if(v.class==Association) {
+        ^if(v.class===Association) {
             case
                 {v.value.isKindOf(AbstractFunction)} {
                     v.value.multiChannelPerform(\value,e[v.key].value)
@@ -172,7 +179,11 @@ PatternPlotter {
                     v.value.asSpec.unmap(e[v.key].value).asArray
                 };
         } {
-            [v.value]
+            if(v.class===Symbol) {
+                e[v].value.asArray
+            } {
+                [v.value]
+            }
         }
     }
     parmapClip {|e, v, n| ^this.parmap(e,v).clipAt(n)}
@@ -213,7 +224,20 @@ PatternPlotter {
                 if(v.class==Association) {
                     p.usedKeys = p.usedKeys.add(v.key).as(IdentitySet)
                 }
-            }
+            };
+            if(p.plotIDs.notNil) {
+                p.plotIDs = p.plotIDs.asArray.as(IdentitySet);
+            };
+            if(p.label.isNil) {
+                p.label = switch(p.y.class,
+                    Association, {
+                        p.y.key;
+                    },
+                    Symbol, {
+                        p.y;
+                    }
+                );
+            };
         };
         bounds.height = height;
     }
@@ -226,14 +250,14 @@ PatternPlotter {
         var ev;
         plotSpecs.do {|plot|
             var y2;
-            var lbl = plot.label ?? {if(plot.y.class==Association) {plot.y.key}};
+//            var lbl = plot.label ?? {if(plot.y.class==Association) {plot.y.key}};
             yofs = yofs + plot.padding;
             y2 = round(bounds.height-yofs-plot.height-plot.padding)+0.5;
 
-            lbl !? {
+            plot.label !? {
                 pen.font = plot.labelFont;
                 pen.color = plot.labelColor;
-                pen.stringAtPoint(lbl,(labelMargin)@y2); // print label in plot
+                pen.stringAtPoint(plot.label,(labelMargin)@y2); // print label in plot
             };
 
             plot.baseline = bounds.height - yofs + 0.5;
@@ -251,14 +275,16 @@ PatternPlotter {
             yofs = yofs + plot.height+plot.padding;
         };
 
-        while { ev = stream.next(Event.default); t<length and: {ev.notNil} } {
+        while { ev = stream.next(defaultEvent); t<length and: {ev.notNil} } {
             case
             {ev.isKindOf(SimpleNumber)} { t = t + ev }
-            {ev.class==Event} { ev.use {
+            {ev.isRest == true} { t = t + ev.dur } //?
+            {ev.class===Event} { ev.use {
                 var topY= -1, bottomY= inf;
                 var str;
-                var id = ev.plotID;
-                var doPlot = not(ev.type==\rest or: {ev.detunedFreq.value.isRest});
+                var id = ev.plotID ?? {\default};
+//                var doPlot = not(ev.type==\rest or: {ev.detunedFreq.value.isRest});
+//                var doPlot = ev.isRest.not;
 
                 yofs = 0;
                 x = round(t * xscale) + 0.5 + leftMargin;
@@ -267,9 +293,17 @@ PatternPlotter {
                     var h = plot.height;
                     var y, y1, lastP, lastP1, dotSize;
                     var state;
+                    var doPlot = ev.isRest.not and: {
+                        plot.plotIDs.isNil or: {
+                            plot.plotIDs.includes(id)
+                        }
+                    } and: {
+                        this.checkKeys(ev,plot)
+                    };
 
                     yofs = yofs + plot.padding;
-                    if(id.isNil or: {id==plot.plotID} and: {doPlot and: this.checkKeys(ev,plot)}) {
+//                    if(id.isNil or: {id==plot.plotID} and: {doPlot and: this.checkKeys(ev,plot)}) {
+                    if(doPlot) {
                         y = bounds.height-round(yofs+(this.parmap(ev,plot.y)*h));
                         y1 = plot.y1 !? {bounds.height-round(yofs+(this.parmap(ev,plot.y1)*h))} ? y;
                         state = plot.state[id.asSymbol];
