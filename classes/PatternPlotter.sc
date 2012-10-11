@@ -14,6 +14,16 @@ todo:
 
 * allow passing plotDefaults in Event too
 
+* y0 with \levels (for segCtrl mono synth)
+- needs to draw valueLabel and dot at first point
+- needs to draw tick at last point
+- ignore y0 when type is not \levels? and ignore y1 when y0 is set?
+perhaps it would make more sense to have a separate type..
+Also, both y0, y and y1 might be useful in user-drawing funcs.. so we should always get these?
+
+- Use same map as for y if only key is given to y0
+
+
 * move tickLine stuff into the event:
 plotTickWidth, etc..
 
@@ -22,12 +32,25 @@ plotTickWidth, etc..
 * allowing overlaying (reusing same plotSpec row) of plotSpec,
 that is, it should not increment y before drawing..
 
+* automatic assigning plotID if not given, for parallell events.. but we don't know they are parallell..
+- possibly, change Ppar to insert a \parindex -> n in the events??
+
 * automatic vertical stacking when using multiple plotSpecs in Ppar?
 using plotRow value.. need to know the height of each parallell plotSpec,
 which is hard since the rows can come in different order..?
 perhaps when we've solved the p.bounds issue?
 
-* time grid
+automatic: we could increase row value each time a plotSpec is added to the usedPlotSpecs set (make it a dictionary instead)
+but then, we won't know when a plotSpecs unit has ended, so we can free up that row.
+if we don't do that, also sequential plotSpecs units will be stacked.
+
+we could insert events marking start and end of a unit:
+Pseq([(type:\plotStart),pattern,(type:\plotEnd)])
+
+this would also help with giving names or graphics for each unit!
+
+* time grid, bars:beats and/or seconds, etc.. user can provide a function for creating the strings
+minor and major ticks
 
 * pagination for printing, how?
 
@@ -186,6 +209,14 @@ PatternPlotter {
 
     var <bounds;
 
+    classvar mappableSymbols;
+
+//    var drawCount = 0;
+
+    *initClass {
+        mappableSymbols = IdentitySet[\y,\y0,\y1,\lineWidth,\dotSize,\dotColor,\dotShape,\valueLabel,\valueLabelColor,\valueLabelFont,\valueLabelOffset,\dash,\color];
+    }
+
     *new {|pattern,defaults,plotSpecs|
         ^super.new.init(pattern, defaults, plotSpecs);
     }
@@ -204,7 +235,7 @@ PatternPlotter {
             y1: nil,
             height: 150,
             type: \levels,
-            lenKey: \sustain,
+//            lenKey: \sustain,
             label: nil,
             lineWidth: 1,
             padding: 20,
@@ -222,6 +253,12 @@ PatternPlotter {
             color: Color.black,
             baselineDash: FloatArray[inf,1],
             baselineColor: nil,
+            match: #{|plot,ev| //NOTE: plot (self) is passed automatically
+                plot.plotIDs.isNil or: {
+                    plot.plotIDs.includes(ev.plotID)
+                } and: {plot.filter(ev)}
+            },
+            filter: #{|plot,ev| true},
         );
         if(aDefaults.notNil) {
             defaults.putAll(aDefaults);
@@ -241,7 +278,7 @@ PatternPlotter {
         ^if(v.class===Association) {
             case
                 {v.value.isKindOf(AbstractFunction)} {
-                    v.value.multiChannelPerform(\value,e[v.key].value)
+                    v.value.multiChannelPerform(\value,e[v.key].value,e)
                 }
                 {v.value.isKindOf(Nil)} {
                     e[v.key].value.asArray
@@ -250,11 +287,15 @@ PatternPlotter {
                     v.value.asSpec.unmap(e[v.key].value).asArray
                 };
         } {
-            if(v.class===Symbol) {
-                e[v].value.asArray
+//            if(v.class===Symbol) {
+//                e[v].value.asArray
+//            } {
+            if(v.value.isKindOf(AbstractFunction)) {
+                v.multiChannelPerform(\value,e)
             } {
                 [v.value]
             }
+            //            }
         }
     }
     parmapClip {|e, v, n| ^this.parmap(e,v).clipAt(n)}
@@ -287,29 +328,30 @@ PatternPlotter {
 
     plotSpecs_ {|aPlotSpecs|
         var height = 0;
-//        orgPlotSpecs = aPlotSpecs;
         plotSpecs = aPlotSpecs.reverse;
         plotSpecs.do {|p|
             p.parent = defaults;
             height = height + (p.padding*2) + p.height;
-            p.do {|v|
-                if(v.class==Association) {
+            p.pairsDo {|k,v|
+                // better to convert single symbols to key -> nil here
+                if(v.class===Symbol and: {mappableSymbols.includes(k)}) {
+                    v = (v -> nil);
+                    p[k] = v;
+                };
+                if(v.class===Association) {
                     p.usedKeys = p.usedKeys.add(v.key).as(IdentitySet)
                 }
+
             };
             if(p.plotIDs.notNil) {
                 p.plotIDs = p.plotIDs.asArray.as(IdentitySet);
             };
             if(p.label.isNil) {
-                p.label = switch(p.y.class,
-                    Association, {
-                        p.y.key;
-                    },
-                    Symbol, {
-                        p.y;
-                    }
-                );
+                p.label = if(p.y.class===Association){p.y.key};
             };
+            if(p.lenKey.isNil) {
+                p.lenKey = if(p.y0.isNil,\sustain,\dur);
+            }
         };
         bounds.height = height;
     }
@@ -334,12 +376,12 @@ PatternPlotter {
 
         var lastPlotSpecs = nil;
         var usedPlotSpecs = IdentitySet.new;
+//        drawCount = drawCount + 1;
         while { ev = stream.next(defaultEvent); t<length and: {ev.notNil} } {
             case
             {ev.isKindOf(SimpleNumber)} { t = t + ev }
             {ev.isRest == true} { t = t + ev.dur } //?
             {ev.class===Event} { ev.use {
-//                var topY= -1, bottomY= inf;
                 var str;
                 var id = ev.plotID ? \default;
                 var newSpecs = ev.plotSpecs;
@@ -352,14 +394,11 @@ PatternPlotter {
                     lastPlotSpecs = newSpecs;
                 };
 
-//                if(newSpecs.notNil and: {newSpecs!==orgPlotSpecs[row]}) {
-                // NOTE: instead of the Set, we could keep a draw counter (inst var) and set it in the plotSpec itself?
                 if(newSpecs.notNil and: {usedPlotSpecs.includes(newSpecs).not}) {
-//                    this.plotSpecs = newSpecs;
-//                    this.plotSpecs.debug("NEW SPECS");
-                    //bounds.height = bounds.height + ofs; // hmm
-//                    orgPlotSpecs[row] = newSpecs; // for comparision only
                     usedPlotSpecs.add(newSpecs);
+                    //alternative:
+//                if(newSpecs.notNil and: {newSpecs[0].drawCount!=drawCount}) {
+//                    newSpecs[0].drawCount=drawCount; // a bit ugly, we just store it in the first plotSpec..
                     yofs = ofs;
                     plotSpecs.do {|plot|
                         var y2;
@@ -392,30 +431,47 @@ PatternPlotter {
 
                 yofs = ofs;
 
-                plotSpecs.do {|plot|
+                plotSpecs.do {|plot,i|
                     var h = plot.height;
-                    var y, y1, lastP, lastP1, dotSize;
+                    var y, y0, y1, lastP, lastP1, dotSize;
                     var state;
-                    var doPlot = ev.isRest.not and: {
+/*                    var doPlot = ev.isRest.not and: {
                         plot.plotIDs.isNil or: {
                             plot.plotIDs.includes(id)
                         }
                     } and: {
                         this.checkKeys(ev,plot)
-                    };
+                    };*/
+                    var doPlot = ev.isRest.not and: {plot.match(ev)} and: {this.checkKeys(ev,plot)};
 
                     yofs = yofs + plot.padding;
 //                    if(id.isNil or: {id==plot.plotID} and: {doPlot and: this.checkKeys(ev,plot)}) {
                     if(doPlot) {
                         y = bounds.height-round(yofs+(this.parmap(ev,plot.y)*h));
+                        y0 = plot.y0 !? {bounds.height-round(yofs+(this.parmap(ev,plot.y0)*h))};
                         y1 = plot.y1 !? {bounds.height-round(yofs+(this.parmap(ev,plot.y1)*h))} ? y;
                         state = plot.state[id.asSymbol];
 
                         plot.state[id.asSymbol] = state.size.max(y.size).max(y1.size).collect {|n|
-                            var old = state !? {state.clipAt(n)};
-                            var p = x @ y.clipAt(n);
-                            var p1 = (ev[plot.lenKey].value * xscale + x) @ y1.clipAt(n);
-                            var lw = this.parmapClip(ev,plot.lineWidth,n);
+                            var old, p, p1, lw, dotP;
+
+                            old = state !? {state.clipAt(n).old};
+                            p1 = (ev[plot.lenKey].value * xscale + x) @ y1.clipAt(n);
+                            lw = this.parmapClip(ev,plot.lineWidth,n);
+
+                            if(y0.notNil) {
+                                p = if(state.isNil) {
+                                    x @ y0.clipAt(n);
+                                } {
+                                    old
+                                };
+                                dotP = p1;
+                            } {
+                                p = x @ y.clipAt(n);
+                                dotP = p;
+                            };
+
+//                            plot.lenKey.debug("ev lenkey");
 
                             if(lw.asInteger.odd) { p.y = p.y + 0.5; p1.y = p1.y + 0.5 };
 
@@ -440,11 +496,14 @@ PatternPlotter {
                                     old = p;
                                 },
                                 \levels, {
+//                                    if(plot.connectOld==true and: {old.notNil}) {
+//                                        p = old;
+//                                    };
                                     if(lastP != p or: {lastP1 != p1}) {
                                         pen.line(p, p1);
                                         pen.stroke;
                                     };
-                                    old = nil;
+                                    old = p1;
                                 },
                                 \bargraph, {
                                     if(lastP != p) {
@@ -458,12 +517,13 @@ PatternPlotter {
                                 }
                             );
                             if(lastP != p) {
+//                            if(lastP != dotP) {
                                 dotSize = this.parmapClip(ev,plot.dotSize,n);
                                 if(dotSize>0) {
                                     pen.fillColor = this.parmapClip(ev,plot.dotColor,n);
                                     switch(this.parmapClip(ev,plot.dotShape,n),
                                         \square, { pen.addRect(Rect.fromPoints(p-dotSize,p+dotSize)) },
-                                        { pen.addArc(p, dotSize, 0, 2pi) } //default is circle
+                                        { pen.addArc(dotP, dotSize, 0, 2pi) } //default is circle
                                     );
                                     pen.fill;
                                 };
@@ -475,14 +535,15 @@ PatternPlotter {
                                 {(str=this.parmapClip(ev,plot.valueLabel,n).asString)!=plot.lastValueString}) {
                                     pen.font = this.parmapClip(ev,plot.valueLabelFont,n);
                                     pen.color = this.parmapClip(ev,plot.valueLabelColor,n);
-                                    pen.stringAtPoint(str,p + this.parmapClip(ev,plot.valueLabelOffset,n));
+                                    pen.stringAtPoint(str,dotP + this.parmapClip(ev,plot.valueLabelOffset,n));
                                     if(plot.valueLabelNoRepeat) {plot.lastValueString = str};
                                 };
                             };
                             lastP = p;
                             lastP1 = p1;
 
-                            old;
+                            (old:old); // return new state
+                            //old;
                         }.clipExtend(y.size);
                     };
                     yofs = yofs + h + plot.padding;
@@ -493,7 +554,7 @@ PatternPlotter {
                     bottomY = bounds.height + ofs.neg;
                 };
                 t = t + ev.delta;
-                if(ev.delta > tickTimeTolerance) {
+                if(ev.delta > tickTimeTolerance or: tickFullHeight) {
                     drawTick.value;
                     topY= -1;
                     bottomY= inf;
