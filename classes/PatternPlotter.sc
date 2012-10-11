@@ -4,6 +4,18 @@ WORK IN PROGRESS
 
 todo:
 
+* at t>length or ev.isNil, close all parts that hasn't ended yet (dangling \begin's)
+
+* Now that we have begin/end plot parts:
+- possibly auto allocation of vertical space (instead of resetting top:0 manually in plotspecs)
+- part name can be given and the part boundaries can be marked graphically in various ways
+perhaps we should draw part boundaries and name as a special kind of plotSpec type? \part
+then the only thing in the plotPart events added are plotID..
+
+* one problem with drawing baseline at part-end is that it will be drawn on top of the other graphics..
+one solution would be to record all pen actions for the other graphics, and play them back only at part-end.
+perhaps there are simpler solutions..
+
 * simple western notation
 - clef
 - stafflines
@@ -25,52 +37,21 @@ Also, both y0, y and y1 might be useful in user-drawing funcs.. so we should alw
 
 * curves for line and levels
 
-* move tickLine stuff into the event:
-plotTickWidth, etc..
+* move tickLine stuff into the event?
+otoh, they can be are drawn between events.. so they must be bound to a plotPart.
+perhaps it would make sense to provide a dictionary of plotPart properties to PatternPlotter?
 
 * custom graphics in special cases, we could provide a drawing func and type: \custom?
-
-* allowing overlaying (reusing same plotSpec row) of plotSpec,
-that is, it should not increment y before drawing..
-
-* automatic assigning plotID if not given, for parallell events.. but we don't know they are parallell..
-- possibly, change Ppar to insert a \parindex -> n in the events??
-
-* automatic vertical stacking when using multiple plotSpecs in Ppar?
-using plotRow value.. need to know the height of each parallell plotSpec,
-which is hard since the rows can come in different order..?
-perhaps when we've solved the p.bounds issue?
-
-automatic: we could increase row value each time a plotSpec is added to the usedPlotSpecs set (make it a dictionary instead)
-but then, we won't know when a plotSpecs unit has ended, so we can free up that row.
-if we don't do that, also sequential plotSpecs units will be stacked.
-
-we could insert events marking start and end of a unit:
-Pseq([(type:\plotStart),pattern,(type:\plotEnd)])
-
-this would also help with giving names or graphics for each unit!
 
 * time grid, bars:beats and/or seconds, etc.. user can provide a function for creating the strings
 minor and major ticks
 
 * pagination for printing, how?
 
-* p.bounds doesn't work anymore, since we now pass plotSpecs in the event.
-This means plotSpecs can change anytime, and therefore the height.
-Also width is hard to know except by running through the whole pattern once..
-
-we could add a function to run through only the plotSpecs in the event stream, without actually drawing.
-
-and we should have a bounds for each plotSpec..
-
 * representing a composition at macro level, like blocks with different names/colors.
-introducing plotSettings (see above) could help with this, there we could give a name for the whole block. We'd need to wait until the next block (or end) before drawing it, so we know the positions..
+use plotParts..
 
-perhaps we could also put things like this in
-
-* baseline needs to be drawn for each "unit" (unique plotSpec) too.
-
-* plotting Synth outputs
+* plotting Synth outputs ??
 for example, the results of different LFNoise's, LFOs, Envelopes, etc..
 this would need to happen in realtime.
 1. write these to busses and poll these busses continuously lang-side
@@ -193,12 +174,25 @@ example:
 
 ********************************************************************/
 
+PplotPart {
+//    *new {|options=(()), pattern|
+    *new {|id=\noID, pattern|
+//        var id = options.plotID ? \noID;
+        ^Pseq([
+            (type: \plotPart, scope: \begin, dur: 0),
+            pattern,
+            (type: \plotPart, scope: \end, dur: 0),
+        ]) <> (plotID: id);
+    }
+}
+
+
 PatternPlotter {
     var <length, // duration to plot (in seconds)
         <xscale = 50, // pixels per second (time zoom level)
         <leftMargin = 10,
         <rightMargin = 10,
-        <>labelMargin = 10,
+        <>labelMargin = 0, // move to plotSpec
         <>defaultEvent;
 
     var <>tickColor,
@@ -223,8 +217,12 @@ PatternPlotter {
     }
 
     gui {
-        var win;
-        UserView(win = Window("Pattern Plot",bounds).front,bounds).background_(Color.white).drawFunc_({|v|
+        var bnd = bounds & Rect(0,0,800,400);
+        var win = Window("Pattern Plot",bnd).front;
+        var scr = ScrollView(win, bnd).resize_(5);
+        bnd.debug("bnd");
+        bounds.debug("bounds");
+        UserView(scr,bounds).background_(Color.white).drawFunc_({|v|
             this.draw;
         }).refresh;
         ^win;
@@ -269,9 +267,10 @@ PatternPlotter {
         tickDash = FloatArray[1,2];
         this.length = 16;
         this.pattern = aPattern;
-        if(aPlotSpecs.notNil) {
-            this.pattern = aPattern <> (plotSpecs:aPlotSpecs);
-        };
+//        if(aPlotSpecs.notNil) {
+//            this.pattern = aPattern <> (plotSpecs:aPlotSpecs);
+//        };
+        this.plotSpecs = aPlotSpecs;
         this.defaultEvent = Event.default;
     }
 
@@ -379,67 +378,88 @@ PatternPlotter {
             }
         };
 
-        var lastPlotSpecs = nil;
+/*        var lastPlotSpecs = nil;
         var usedPlotSpecs = IdentitySet.new;
-//        drawCount = drawCount + 1;
+*/
+/*        yofs = 0;
+        plotSpecs.do {|plot|
+            var y2;
 
-        while { ev = stream.next(defaultEvent); t<length and: {ev.notNil} } {
+            plot.top !? { yofs = plot.top };
+            yofs = yofs + plot.padding;
+            y2 = round(yofs-plot.padding)+0.5;
+
+            plot.label !? {
+                pen.font = plot.labelFont;
+                pen.color = plot.labelColor;
+                pen.stringAtPoint(plot.label,labelMargin@y2);
+            };
+
+            plot.baseline = yofs+plot.height+0.5;
+            plot.baselineColor !? {
+                pen.line(leftMargin@plot.baseline,(length*xscale+leftMargin)@plot.baseline);
+                pen.width = 1;
+                pen.strokeColor = plot.baselineColor;
+                pen.lineDash = plot.baselineDash;
+                pen.stroke;
+            };
+
+            plot.state = IdentityDictionary.new;
+            plot.lastValueString = nil;
+
+            yofs = yofs + plot.height+plot.padding;
+        };*/
+
+        // FIXME: at t>length or ev.isNil, close all parts that hasn't ended yet (dangling \begin's)
+        while { ev = stream.next(defaultEvent); t<=length and: {ev.notNil} } {
             case
             {ev.isKindOf(SimpleNumber)} { t = t + ev }
-//            {ev.isRest == true} { t = t + ev.delta; ev.delta.debug("GOT REST") } //?
             {ev.class===Event} { ev.use {
                 var str;
                 var id = ev.plotID ? \default;
                 var newSpecs = ev.plotSpecs;
-                var ofs = neg( ev.plotOfs ? 0 );
 
                 x = round(t * xscale) + 0.5 + leftMargin;
 
-                if(newSpecs !== lastPlotSpecs) {
-                    this.plotSpecs = newSpecs;
-                    lastPlotSpecs = newSpecs;
-                };
-
-                if(newSpecs.notNil and: {usedPlotSpecs.includes(newSpecs).not}) {
-                    usedPlotSpecs.add(newSpecs);
-                    //alternative:
-//                if(newSpecs.notNil and: {newSpecs[0].drawCount!=drawCount}) {
-//                    newSpecs[0].drawCount=drawCount; // a bit ugly, we just store it in the first plotSpec..
-                    yofs = ofs;
+                if(ev.type==\plotPart) {
+                    yofs = 0;
                     plotSpecs.do {|plot|
                         var y2;
 
-                        plot.top !? { yofs = plot.top };
+                        if(ev.scope==\begin) {
+                            plot.top !? { yofs = plot.top };
+                            yofs = yofs + plot.padding;
+                            y2 = round(yofs-plot.padding)+0.5;
 
-                        yofs = yofs + plot.padding;
+                            plot.baseline = yofs+plot.height+0.5; // FIXME: we can move this to plotSpecs_ setter
+                            if(plot.match(ev)) { //FIXME: actually we should not allow user to change plot.match, keep it with plotID instead and add another plotFilter
+                                plot.label !? {
+                                    pen.font = plot.labelFont;
+                                    pen.color = plot.labelColor;
+                                    pen.stringAtPoint(plot.label,(x+labelMargin)@y2);
+                                };
+                                plot.state = IdentityDictionary.new;
+                                plot.lastValueString = nil;
+                                plot.startX = x;
+                                x.debug("setting startX");
+                            };
 
-//                        y2 = round(bounds.height-yofs-plot.height-plot.padding)+0.5;
-                        y2 = round(yofs-plot.padding)+0.5;
-
-                        plot.label !? {
-                            pen.font = plot.labelFont;
-                            pen.color = plot.labelColor;
-//                            pen.stringAtPoint(plot.label,(labelMargin)@y2);
-                            pen.stringAtPoint(plot.label,x@y2);
+                            yofs = yofs + plot.height+plot.padding;
+                        } {
+                            if(plot.match(ev)) {
+                                plot.baselineColor !? {
+                                    pen.line(plot.startX@plot.baseline,x@plot.baseline);
+                                    pen.width = 1;
+                                    pen.strokeColor = plot.baselineColor;
+                                    pen.lineDash = plot.baselineDash;
+                                    pen.stroke;
+                                };
+                            };
                         };
-
-                        plot.baseline = yofs+plot.height+0.5; //bounds.height - yofs + 0.5;
-                        plot.baselineColor !? {
-                            pen.line(leftMargin@plot.baseline,(length*xscale+leftMargin)@plot.baseline);
-                            pen.width = 1;
-                            pen.strokeColor = plot.baselineColor;
-                            pen.lineDash = plot.baselineDash;
-                            pen.stroke;
-                        };
-
-                        plot.state = IdentityDictionary.new;
-                        plot.lastValueString = nil;
-
-                        yofs = yofs + plot.height+plot.padding;
                     };
                 };
 
-                yofs = ofs;
+                yofs = 0;
 
                 plotSpecs.do {|plot,i|
                     var h = plot.height;
@@ -452,7 +472,8 @@ PatternPlotter {
                     } and: {
                         this.checkKeys(ev,plot)
                     };*/
-                    var doPlot = ev.isRest.not and: {plot.match(ev)} and: {this.checkKeys(ev,plot)};
+//                    var doPlot = ev.isRest.not and: {plot.match(ev)} and: {this.checkKeys(ev,plot)};
+                    var doPlot = (ev.type != \plotPart) and: ev.isRest.not and: {plot.match(ev)} and: {this.checkKeys(ev,plot)};
                     plot.top !? { yofs = plot.top };
                     yofs = yofs + plot.padding;
 //                    if(id.isNil or: {id==plot.plotID} and: {doPlot and: this.checkKeys(ev,plot)}) {
@@ -563,8 +584,8 @@ PatternPlotter {
                 };
 
                 if(tickFullHeight) {
-                    topY = ofs.neg; //?
-                    bottomY = bounds.height + ofs.neg; //?
+                    topY = 0; //ofs.neg; //?
+                    bottomY = bounds.height; // + ofs.neg; //?
                 };
                 t = t + ev.delta;
                 if(ev.delta > tickTimeTolerance or: tickFullHeight) {
@@ -579,3 +600,8 @@ PatternPlotter {
     }
 }
 
++ Pattern {
+    plotPart {|id|
+        ^PplotPart(id, this)
+    }
+}
