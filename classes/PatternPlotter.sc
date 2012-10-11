@@ -12,7 +12,7 @@ todo:
 - stems going to a duration bar
 - notes with same duration are grouped into a chord
 
-* allow passing plotDefaults in Event too
+* the processing in plotSpecs_ setter needs to be done for the defaults too!
 
 * y0 with \levels (for segCtrl mono synth)
 - needs to draw valueLabel and dot at first point
@@ -23,6 +23,7 @@ Also, both y0, y and y1 might be useful in user-drawing funcs.. so we should alw
 
 - Use same map as for y if only key is given to y0
 
+* curves for line and levels
 
 * move tickLine stuff into the event:
 plotTickWidth, etc..
@@ -214,7 +215,7 @@ PatternPlotter {
 //    var drawCount = 0;
 
     *initClass {
-        mappableSymbols = IdentitySet[\y,\y0,\y1,\lineWidth,\dotSize,\dotColor,\dotShape,\valueLabel,\valueLabelColor,\valueLabelFont,\valueLabelOffset,\dash,\color];
+        mappableSymbols = IdentitySet[\y,\y0,\y1,\lineWidth,\dotSize,\dotColor,\valueLabel,\valueLabelColor,\valueLabelFont,\valueLabelOffset,\dash,\color];
     }
 
     *new {|pattern,defaults,plotSpecs|
@@ -290,11 +291,11 @@ PatternPlotter {
 //            if(v.class===Symbol) {
 //                e[v].value.asArray
 //            } {
-            if(v.value.isKindOf(AbstractFunction)) {
-                v.multiChannelPerform(\value,e)
-            } {
+//            if(v.value.isKindOf(AbstractFunction)) {
+//                v.multiChannelPerform(\value,e)
+//            } {
                 [v.value]
-            }
+//            }
             //            }
         }
     }
@@ -327,11 +328,14 @@ PatternPlotter {
     }
 
     plotSpecs_ {|aPlotSpecs|
-        var height = 0;
-        plotSpecs = aPlotSpecs.reverse;
+        var height = 0, maxheight = 0;
+//        plotSpecs = aPlotSpecs.reverse;
+        plotSpecs = aPlotSpecs;
         plotSpecs.do {|p|
             p.parent = defaults;
+            p.top !? { height = p.top };
             height = height + (p.padding*2) + p.height;
+            if(height > maxheight) {maxheight = height};
             p.pairsDo {|k,v|
                 // better to convert single symbols to key -> nil here
                 if(v.class===Symbol and: {mappableSymbols.includes(k)}) {
@@ -353,7 +357,7 @@ PatternPlotter {
                 p.lenKey = if(p.y0.isNil,\sustain,\dur);
             }
         };
-        bounds.height = height;
+        bounds.height = maxheight.debug("total height");
     }
 
     draw {|pen=(Pen)|
@@ -363,9 +367,10 @@ PatternPlotter {
         var yofs;
         var ev;
 
-        var topY= -1, bottomY= inf;
+//        var topY= -1, bottomY= inf;
+        var topY= inf, bottomY= -1;
         var drawTick = {
-            if(topY >= 0) {
+            if(bottomY >= 0) {
                 pen.line(x@topY,x@bottomY);
                 pen.width = 1;
                 pen.strokeColor = tickColor;
@@ -377,10 +382,11 @@ PatternPlotter {
         var lastPlotSpecs = nil;
         var usedPlotSpecs = IdentitySet.new;
 //        drawCount = drawCount + 1;
+
         while { ev = stream.next(defaultEvent); t<length and: {ev.notNil} } {
             case
             {ev.isKindOf(SimpleNumber)} { t = t + ev }
-            {ev.isRest == true} { t = t + ev.dur } //?
+//            {ev.isRest == true} { t = t + ev.delta; ev.delta.debug("GOT REST") } //?
             {ev.class===Event} { ev.use {
                 var str;
                 var id = ev.plotID ? \default;
@@ -402,9 +408,13 @@ PatternPlotter {
                     yofs = ofs;
                     plotSpecs.do {|plot|
                         var y2;
+
+                        plot.top !? { yofs = plot.top };
+
                         yofs = yofs + plot.padding;
 
-                        y2 = round(bounds.height-yofs-plot.height-plot.padding)+0.5;
+//                        y2 = round(bounds.height-yofs-plot.height-plot.padding)+0.5;
+                        y2 = round(yofs-plot.padding)+0.5;
 
                         plot.label !? {
                             pen.font = plot.labelFont;
@@ -413,7 +423,7 @@ PatternPlotter {
                             pen.stringAtPoint(plot.label,x@y2);
                         };
 
-                        plot.baseline = bounds.height - yofs + 0.5;
+                        plot.baseline = yofs+plot.height+0.5; //bounds.height - yofs + 0.5;
                         plot.baselineColor !? {
                             pen.line(leftMargin@plot.baseline,(length*xscale+leftMargin)@plot.baseline);
                             pen.width = 1;
@@ -443,13 +453,16 @@ PatternPlotter {
                         this.checkKeys(ev,plot)
                     };*/
                     var doPlot = ev.isRest.not and: {plot.match(ev)} and: {this.checkKeys(ev,plot)};
-
+                    plot.top !? { yofs = plot.top };
                     yofs = yofs + plot.padding;
 //                    if(id.isNil or: {id==plot.plotID} and: {doPlot and: this.checkKeys(ev,plot)}) {
                     if(doPlot) {
-                        y = bounds.height-round(yofs+(this.parmap(ev,plot.y)*h));
-                        y0 = plot.y0 !? {bounds.height-round(yofs+(this.parmap(ev,plot.y0)*h))};
-                        y1 = plot.y1 !? {bounds.height-round(yofs+(this.parmap(ev,plot.y1)*h))} ? y;
+//                        y = bounds.height-round(yofs+(this.parmap(ev,plot.y)*h));
+//                        y0 = plot.y0 !? {bounds.height-round(yofs+(this.parmap(ev,plot.y0)*h))};
+//                        y1 = plot.y1 !? {bounds.height-round(yofs+(this.parmap(ev,plot.y1)*h))} ? y;
+                        y = round(yofs+h-(this.parmap(ev,plot.y)*h));
+                        y0 = plot.y0 !? {round(yofs+h-(this.parmap(ev,plot.y0)*h))};
+                        y1 = plot.y1 !? {round(yofs+h-(this.parmap(ev,plot.y1)*h))} ? y;
                         state = plot.state[id.asSymbol];
 
                         plot.state[id.asSymbol] = state.size.max(y.size).max(y1.size).collect {|n|
@@ -528,8 +541,8 @@ PatternPlotter {
                                     pen.fill;
                                 };
                                 if(dotSize>0 or: {plot.type != \dots}) {
-                                    if(p.y < bottomY) { bottomY = p.y };
-                                    if(p.y > topY) { topY = p.y };
+                                    if(p.y > bottomY) { bottomY = p.y };
+                                    if(p.y < topY) { topY = p.y };
                                 };
                                 if(plot.valueLabel.notNil and:
                                 {(str=this.parmapClip(ev,plot.valueLabel,n).asString)!=plot.lastValueString}) {
@@ -550,14 +563,14 @@ PatternPlotter {
                 };
 
                 if(tickFullHeight) {
-                    topY = ofs.neg;
-                    bottomY = bounds.height + ofs.neg;
+                    topY = ofs.neg; //?
+                    bottomY = bounds.height + ofs.neg; //?
                 };
                 t = t + ev.delta;
                 if(ev.delta > tickTimeTolerance or: tickFullHeight) {
                     drawTick.value;
-                    topY= -1;
-                    bottomY= inf;
+                    topY= inf;
+                    bottomY= -1;
                 }
             }} // case event
         }; // event iteration loop
