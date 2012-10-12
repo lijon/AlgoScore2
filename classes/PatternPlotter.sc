@@ -33,8 +33,6 @@ perhaps there are simpler solutions..
 perhaps it would make more sense to have a separate type..
 Also, both y0, y and y1 might be useful in user-drawing funcs.. so we should always get these?
 
-- Use same map as for y if only key is given to y0
-
 * curves for line and levels
 
 * move tickLine stuff into the event?
@@ -47,6 +45,7 @@ perhaps it would make sense to provide a dictionary of plotPart properties to Pa
 minor and major ticks
 
 * pagination for printing, how?
+record the pen (see ASPen), then we can iterate it for each page and set a clip box and translation
 
 * representing a composition at macro level, like blocks with different names/colors.
 use plotParts..
@@ -217,7 +216,7 @@ PatternPlotter {
     }
 
     gui {
-        var bnd = bounds & Rect(0,0,800,400);
+        var bnd = (bounds+Rect(0,0,20,20)) & Rect(0,0,800,400);
         var win = Window("Pattern Plot",bnd).front;
         var scr = ScrollView(win, bnd).resize_(5);
         bnd.debug("bnd");
@@ -266,7 +265,7 @@ PatternPlotter {
         tickColor = Color(0,0,0.5,0.5);
         tickDash = FloatArray[1,2];
         this.length = 16;
-        this.pattern = aPattern;
+        this.pattern = aPattern.plotPart(\defaultID);
 //        if(aPlotSpecs.notNil) {
 //            this.pattern = aPattern <> (plotSpecs:aPlotSpecs);
 //        };
@@ -354,7 +353,10 @@ PatternPlotter {
             };
             if(p.lenKey.isNil) {
                 p.lenKey = if(p.y0.isNil,\sustain,\dur);
-            }
+            };
+            if((p.y0.class===Association) and: {p.y0.value.isKindOf(Nil)}) {
+                p.y0.value = p.y.value;
+            };
         };
         bounds.height = maxheight.debug("total height");
     }
