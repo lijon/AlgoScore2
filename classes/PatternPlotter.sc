@@ -146,7 +146,7 @@ plotSpec keys:
 
     A spec is .unmap'd to the range 0.0 - 1.0
 
-  also a plain symbol is the same as \theSymbol -> nil
+  also a single symbol will convert to \theSymbol -> nil
 
 internal plotSpec keys:
 
@@ -162,25 +162,24 @@ example:
             \degree, Pseq([0,3,6,[3,5,6],[4,1],2],inf),
             \amp, Pseq([0.2,0.6,0.4,1],inf),
             \foo, Pwhite(0,10,inf),
-            \dur, Pseq([0.5,0.25,1,0.25],inf)
+            \dur, Pseq([0.5,0.25,1,0.25],8)
         ),
+        nil,
         [
             (y: \freq -> [250,550,\exp], valueLabel: \freq -> _.round(0.1), dotSize: \amp -> _.linlin(0,1,1,8), dotColor: Color(0,0,0,0.4), \lineWidth:2),
             (y: \amp -> [0,1], type: \bargraph, height: 50, baselineColor: Color.grey, dotShape: \square),
             (y: \foo -> [0,10], dotSize: 3, type: \linear, height: 100, valueLabel: \foo -> nil)
         ]
-    ).length_(12).tickFullHeight_(false).gui;
+    ).length_(16).gui;
 
 ********************************************************************/
 
 PplotPart {
-//    *new {|options=(()), pattern|
     *new {|id=\noID, pattern|
-//        var id = options.plotID ? \noID;
         ^Pseq([
-            (type: \plotPart, scope: \begin, dur: 0),
+            (type: \plotPart, scope: \begin, isRest: true, dur: 0),
             pattern,
-            (type: \plotPart, scope: \end, dur: 0),
+            (type: \plotPart, scope: \end, isRest: true, dur: 0),
         ]) <> (plotID: id);
     }
 }
@@ -197,15 +196,13 @@ PatternPlotter {
     var <>tickColor,
         <>tickDash,
         <>tickTimeTolerance = 0.001,
-        <>tickFullHeight = true;
+        <>tickFullHeight = false;
 
-    var <>pattern, <>defaults, <plotSpecs;//, orgPlotSpecs;
+    var <>pattern, <>defaults, <plotSpecs;
 
     var <bounds;
 
     classvar mappableSymbols;
-
-//    var drawCount = 0;
 
     *initClass {
         mappableSymbols = IdentitySet[\y,\y0,\y1,\lineWidth,\dotSize,\dotColor,\valueLabel,\valueLabelColor,\valueLabelFont,\valueLabelOffset,\dash,\color];
@@ -215,13 +212,13 @@ PatternPlotter {
         ^super.new.init(pattern, defaults, plotSpecs);
     }
 
-    gui {
-        var bnd = (bounds+Rect(0,0,20,20)) & Rect(0,0,800,400);
+    gui {|scale=1|
+        var rct = Rect(0,0,bounds.width*scale,bounds.height*scale);
+        var bnd = (rct+Rect(0,0,20,20)) & Rect(0,0,800,600);
         var win = Window("Pattern Plot",bnd).front;
         var scr = ScrollView(win, bnd).resize_(5);
-        bnd.debug("bnd");
-        bounds.debug("bounds");
-        UserView(scr,bounds).background_(Color.white).drawFunc_({|v|
+        UserView(scr,rct).background_(Color.white).drawFunc_({|v|
+            Pen.scale(scale,scale);
             this.draw;
         }).refresh;
         ^win;
@@ -251,11 +248,6 @@ PatternPlotter {
             color: Color.black,
             baselineDash: FloatArray[inf,1],
             baselineColor: nil,
-            match: #{|plot,ev| //NOTE: plot (self) is passed automatically
-                plot.plotIDs.isNil or: {
-                    plot.plotIDs.includes(ev.plotID)
-                } and: {plot.filter(ev)}
-            },
             filter: #{|plot,ev| true},
         );
         if(aDefaults.notNil) {
@@ -266,11 +258,14 @@ PatternPlotter {
         tickDash = FloatArray[1,2];
         this.length = 16;
         this.pattern = aPattern.plotPart(\defaultID);
-//        if(aPlotSpecs.notNil) {
-//            this.pattern = aPattern <> (plotSpecs:aPlotSpecs);
-//        };
         this.plotSpecs = aPlotSpecs;
         this.defaultEvent = Event.default;
+    }
+
+    plotMatchesEvent {|plot,ev|
+        ^plot.plotIDs.isNil or: {
+            plot.plotIDs.includes(ev.plotID)
+        } and: {plot.filter(ev)}
     }
 
     parmap {|e,v|
@@ -327,15 +322,14 @@ PatternPlotter {
 
     plotSpecs_ {|aPlotSpecs|
         var height = 0, maxheight = 0;
-//        plotSpecs = aPlotSpecs.reverse;
         plotSpecs = aPlotSpecs;
         plotSpecs.do {|p|
             p.parent = defaults;
             p.top !? { height = p.top };
+            p.baseline = height+p.padding+p.height+0.5;
             height = height + (p.padding*2) + p.height;
             if(height > maxheight) {maxheight = height};
             p.pairsDo {|k,v|
-                // better to convert single symbols to key -> nil here
                 if(v.class===Symbol and: {mappableSymbols.includes(k)}) {
                     v = (v -> nil);
                     p[k] = v;
@@ -358,7 +352,7 @@ PatternPlotter {
                 p.y0.value = p.y.value;
             };
         };
-        bounds.height = maxheight.debug("total height");
+        bounds.height = maxheight;
     }
 
     draw {|pen=(Pen)|
@@ -367,8 +361,6 @@ PatternPlotter {
         var x;
         var yofs;
         var ev;
-
-//        var topY= -1, bottomY= inf;
         var topY= inf, bottomY= -1;
         var drawTick = {
             if(bottomY >= 0) {
@@ -380,75 +372,38 @@ PatternPlotter {
             }
         };
 
-/*        var lastPlotSpecs = nil;
-        var usedPlotSpecs = IdentitySet.new;
-*/
-/*        yofs = 0;
-        plotSpecs.do {|plot|
-            var y2;
-
-            plot.top !? { yofs = plot.top };
-            yofs = yofs + plot.padding;
-            y2 = round(yofs-plot.padding)+0.5;
-
-            plot.label !? {
-                pen.font = plot.labelFont;
-                pen.color = plot.labelColor;
-                pen.stringAtPoint(plot.label,labelMargin@y2);
-            };
-
-            plot.baseline = yofs+plot.height+0.5;
-            plot.baselineColor !? {
-                pen.line(leftMargin@plot.baseline,(length*xscale+leftMargin)@plot.baseline);
-                pen.width = 1;
-                pen.strokeColor = plot.baselineColor;
-                pen.lineDash = plot.baselineDash;
-                pen.stroke;
-            };
-
-            plot.state = IdentityDictionary.new;
-            plot.lastValueString = nil;
-
-            yofs = yofs + plot.height+plot.padding;
-        };*/
-
         // FIXME: at t>length or ev.isNil, close all parts that hasn't ended yet (dangling \begin's)
         while { ev = stream.next(defaultEvent); t<=length and: {ev.notNil} } {
             case
             {ev.isKindOf(SimpleNumber)} { t = t + ev }
             {ev.class===Event} { ev.use {
                 var str;
-                var id = ev.plotID ? \default;
-                var newSpecs = ev.plotSpecs;
+                var id = ev.plotID ? \defaultID;
 
                 x = round(t * xscale) + 0.5 + leftMargin;
+                yofs = 0;
 
-                if(ev.type==\plotPart) {
-                    yofs = 0;
-                    plotSpecs.do {|plot|
-                        var y2;
+                plotSpecs.do {|plot,i|
+                    var h = plot.height;
+                    var y, y0, y1, lastP, lastP1, dotSize;
+                    var state;
+                    var evMatches = this.plotMatchesEvent(plot,ev);
+                    var doPlot = ev.isRest.not and: evMatches and: {this.checkKeys(ev,plot)};
+                    plot.top !? { yofs = plot.top };
 
-                        if(ev.scope==\begin) {
-                            plot.top !? { yofs = plot.top };
-                            yofs = yofs + plot.padding;
-                            y2 = round(yofs-plot.padding)+0.5;
-
-                            plot.baseline = yofs+plot.height+0.5; // FIXME: we can move this to plotSpecs_ setter
-                            if(plot.match(ev)) { //FIXME: actually we should not allow user to change plot.match, keep it with plotID instead and add another plotFilter
+                    if(ev.type==\plotPart and: evMatches) {
+                        switch(ev.scope,
+                            \begin, {
                                 plot.label !? {
                                     pen.font = plot.labelFont;
                                     pen.color = plot.labelColor;
-                                    pen.stringAtPoint(plot.label,(x+labelMargin)@y2);
+                                    pen.stringAtPoint(plot.label,(x+labelMargin)@(round(yofs)+0.5));
                                 };
-                                plot.state = IdentityDictionary.new;
+                                plot.state = IdentityDictionary.new; // should this be here? I guess so.
                                 plot.lastValueString = nil;
                                 plot.startX = x;
-                                x.debug("setting startX");
-                            };
-
-                            yofs = yofs + plot.height+plot.padding;
-                        } {
-                            if(plot.match(ev)) {
+                            },
+                            \end, {
                                 plot.baselineColor !? {
                                     pen.line(plot.startX@plot.baseline,x@plot.baseline);
                                     pen.width = 1;
@@ -456,33 +411,14 @@ PatternPlotter {
                                     pen.lineDash = plot.baselineDash;
                                     pen.stroke;
                                 };
-                            };
-                        };
+                            }
+                        );
+                        doPlot = false; // actually not needed..
                     };
-                };
 
-                yofs = 0;
-
-                plotSpecs.do {|plot,i|
-                    var h = plot.height;
-                    var y, y0, y1, lastP, lastP1, dotSize;
-                    var state;
-/*                    var doPlot = ev.isRest.not and: {
-                        plot.plotIDs.isNil or: {
-                            plot.plotIDs.includes(id)
-                        }
-                    } and: {
-                        this.checkKeys(ev,plot)
-                    };*/
-//                    var doPlot = ev.isRest.not and: {plot.match(ev)} and: {this.checkKeys(ev,plot)};
-                    var doPlot = (ev.type != \plotPart) and: ev.isRest.not and: {plot.match(ev)} and: {this.checkKeys(ev,plot)};
-                    plot.top !? { yofs = plot.top };
                     yofs = yofs + plot.padding;
-//                    if(id.isNil or: {id==plot.plotID} and: {doPlot and: this.checkKeys(ev,plot)}) {
+
                     if(doPlot) {
-//                        y = bounds.height-round(yofs+(this.parmap(ev,plot.y)*h));
-//                        y0 = plot.y0 !? {bounds.height-round(yofs+(this.parmap(ev,plot.y0)*h))};
-//                        y1 = plot.y1 !? {bounds.height-round(yofs+(this.parmap(ev,plot.y1)*h))} ? y;
                         y = round(yofs+h-(this.parmap(ev,plot.y)*h));
                         y0 = plot.y0 !? {round(yofs+h-(this.parmap(ev,plot.y0)*h))};
                         y1 = plot.y1 !? {round(yofs+h-(this.parmap(ev,plot.y1)*h))} ? y;
@@ -507,8 +443,6 @@ PatternPlotter {
                                 dotP = p;
                             };
 
-//                            plot.lenKey.debug("ev lenkey");
-
                             if(lw.asInteger.odd) { p.y = p.y + 0.5; p1.y = p1.y + 0.5 };
 
                             pen.strokeColor = this.parmapClip(ev,plot.color,n);
@@ -532,9 +466,6 @@ PatternPlotter {
                                     old = p;
                                 },
                                 \levels, {
-//                                    if(plot.connectOld==true and: {old.notNil}) {
-//                                        p = old;
-//                                    };
                                     if(lastP != p or: {lastP1 != p1}) {
                                         pen.line(p, p1);
                                         pen.stroke;
@@ -579,15 +510,14 @@ PatternPlotter {
                             lastP1 = p1;
 
                             (old:old); // return new state
-                            //old;
                         }.clipExtend(y.size);
                     };
                     yofs = yofs + h + plot.padding;
                 };
 
                 if(tickFullHeight) {
-                    topY = 0; //ofs.neg; //?
-                    bottomY = bounds.height; // + ofs.neg; //?
+                    topY = 0;
+                    bottomY = bounds.height;
                 };
                 t = t + ev.delta;
                 if(ev.delta > tickTimeTolerance or: tickFullHeight) {
