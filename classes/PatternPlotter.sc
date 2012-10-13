@@ -6,6 +6,44 @@ todo:
 
 * at t>length or ev.isNil, close all parts that hasn't ended yet (dangling \begin's)
 
+* rename to ASPatternPlotter and ASPlotPart?
+
+* instead of lenKey, use an ordinary plotspec map? then we can have this fixed, or calculated by a function, etc..
+
+* there is a problem with matching plotspecs through the mapped keys,
+it works fine for the plotted events, but plotPart events does not have any keys so there we can only check for plotIDs,
+which mean they will match any plotspecs that would filter on keys but has no plotIDs specified..
+
+so, I guess we need to enforce the use of plotIDs. perhaps rename to "plotParts".
+then we can get rid of the matched keys thing alltogether. just make sure we don't get errors in case event does not contain the key asked for, etc..
+(we might get "nil does not understand '*'" etc.. otherwise)
+
+* problem with Pfindur in some cases, since it cuts of the stream before the plotpart end event..
+so, not sure how to solve that generally, but PatternPlotter needs to act like there was a plotPart end whenever the stream ends.
+
+cases like this is no problem: Pseq([ Pfindur(x, pat1).plotPart(1), Pbind().plotPart(2) ])
+problem is when we have something like this: Pseq([ Pfindur(x, Ppar([pat1.plotPart(1), pat2.plotPart(2)])), pat3.plotPart(3) ])
+I guess also
+
+one solution might be to add a .plotEnds(1,2) after the Pfindur! plotPart events are not bound to the actual pattern, they only mark the start or stop of a part. So we can allow to separate this when needed:
+
+Pseq([ Pfindur(x, Ppar([pat1.plotID(1), pat2.plotID(2)])).plotParts(1,2), pat3.plotPart(3) ])
+
+or, since the begin's will already be there:
+
+Pseq([ Pfindur(x, Ppar([pat1.plotPart(1), pat2.plotPart(2)])).plotEnds(1,2), pat3.plotPart(3) ])
+
+perhaps we could even build in a check so that a plotPart can't begin or end twice in a row.
+keep state somewhere.. IdentitySet activeParts[id]
+
+* when getting the full length of a pattern (assuming it ends), we won't know the width in pixels..
+perhaps we should use ASPen from the start, and generate the pen instructions when setting the pattern.
+instead of "length" we name it "timelimit", which can default to a big value (30 mins or so).
+then we can find the biggest x-coordinate used, add the left/right margins and return that as the bounds.width.
+p.draw would then just replay it. and we can make use of the x-scaling of ASPoint to have a zoomable plot!
+-either p.draw takes a xscale arg, and the caller would need to multiply p.bounds.width accordingly.
+-or we set p.xscale and p.bounds would adjust bounds.width accordingly..
+
 * Now that we have begin/end plot parts:
 - possibly auto allocation of vertical space (instead of resetting top:0 manually in plotspecs)
 - part name can be given and the part boundaries can be marked graphically in various ways
@@ -26,12 +64,8 @@ perhaps there are simpler solutions..
 
 * the processing in plotSpecs_ setter needs to be done for the defaults too!
 
-* y0 with \levels (for segCtrl mono synth)
-- needs to draw valueLabel and dot at first point
+* \linear2
 - needs to draw tick at last point
-- ignore y0 when type is not \levels? and ignore y1 when y0 is set?
-perhaps it would make more sense to have a separate type..
-Also, both y0, y and y1 might be useful in user-drawing funcs.. so we should always get these?
 
 * curves for line and levels
 
@@ -198,7 +232,7 @@ PatternPlotter {
         <>tickTimeTolerance = 0.001,
         <>tickFullHeight = false;
 
-    var <>pattern, <>defaults, <plotSpecs;
+    var <>pattern, <defaults, <plotSpecs;
 
     var <bounds;
 
@@ -225,12 +259,12 @@ PatternPlotter {
     }
 
     init {|aPattern, aDefaults, aPlotSpecs|
-        defaults = (
+        var defs = (
             y: \freq -> ControlSpec(20,20000,\exp),
             y1: nil,
             height: 150,
             type: \levels,
-//            lenKey: \sustain,
+            lenKey: \sustain,
             label: nil,
             lineWidth: 1,
             padding: 20,
@@ -249,15 +283,17 @@ PatternPlotter {
             baselineDash: FloatArray[inf,1],
             baselineColor: nil,
             filter: #{|plot,ev| true},
+            plotID: \noID,
         );
         if(aDefaults.notNil) {
-            defaults.putAll(aDefaults);
+            defs.putAll(aDefaults);
         };
+        this.defaults = defs;
         bounds = Rect(0,0,800,500);
         tickColor = Color(0,0,0.5,0.5);
         tickDash = FloatArray[1,2];
         this.length = 16;
-        this.pattern = aPattern.plotPart(\defaultID);
+        this.pattern = aPattern.plotPart(\noID);
         this.plotSpecs = aPlotSpecs;
         this.defaultEvent = Event.default;
     }
@@ -294,11 +330,11 @@ PatternPlotter {
     }
     parmapClip {|e, v, n| ^this.parmap(e,v).clipAt(n)}
 
-    checkKeys {|ev, plot|
+/*    checkKeys {|ev, plot|
         plot.usedKeys.do {|k| ev[k] ?? {^false} };
         ^true;
     }
-
+*/
     calcWidth {
         bounds.width = length*xscale+leftMargin+rightMargin;
     }
@@ -320,37 +356,47 @@ PatternPlotter {
         this.calcWidth;
     }
 
+    processPlotSpec {|p|
+        p.pairsDo {|k,v|
+            if(v.class===Symbol and: {mappableSymbols.includes(k)}) {
+                v = (v -> nil);
+                p[k] = v;
+            };
+//            if(v.class===Association) {
+//                p.usedKeys = p.usedKeys.add(v.key).as(IdentitySet)
+//            }
+        };
+        if(p.plotIDs.notNil) {
+            p.plotIDs = p.plotIDs.asArray.as(IdentitySet);
+        };
+//        if((p.y0.class===Association) and: {p.y0.value.isKindOf(Nil)}) {
+//            p.y0.value = p.y.value;
+//        };
+    }
+
+    defaults_ {|aDefaults|
+        defaults = aDefaults;
+        this.processPlotSpec(defaults);
+        // should we also set parent again on plotSpecs here?
+    }
+
     plotSpecs_ {|aPlotSpecs|
         var height = 0, maxheight = 0;
         plotSpecs = aPlotSpecs;
         plotSpecs.do {|p|
             p.parent = defaults;
+//            p.usedKeys = defaults.usedKeys.copy;
             p.top !? { height = p.top };
             p.baseline = height+p.padding+p.height+0.5;
             height = height + (p.padding*2) + p.height;
             if(height > maxheight) {maxheight = height};
-            p.pairsDo {|k,v|
-                if(v.class===Symbol and: {mappableSymbols.includes(k)}) {
-                    v = (v -> nil);
-                    p[k] = v;
-                };
-                if(v.class===Association) {
-                    p.usedKeys = p.usedKeys.add(v.key).as(IdentitySet)
-                }
-
-            };
-            if(p.plotIDs.notNil) {
-                p.plotIDs = p.plotIDs.asArray.as(IdentitySet);
-            };
+            this.processPlotSpec(p);
             if(p.label.isNil) {
                 p.label = if(p.y.class===Association){p.y.key};
             };
-            if(p.lenKey.isNil) {
-                p.lenKey = if(p.y0.isNil,\sustain,\dur);
-            };
-            if((p.y0.class===Association) and: {p.y0.value.isKindOf(Nil)}) {
-                p.y0.value = p.y.value;
-            };
+//            if(p.lenKey.isNil) {
+//                p.lenKey = if(p.y0.isNil,\sustain,\dur);
+//            };
         };
         bounds.height = maxheight;
     }
@@ -385,10 +431,10 @@ PatternPlotter {
 
                 plotSpecs.do {|plot,i|
                     var h = plot.height;
-                    var y, y0, y1, lastP, lastP1, dotSize;
+                    var y, y1, lastP, lastP1;
                     var state;
                     var evMatches = this.plotMatchesEvent(plot,ev);
-                    var doPlot = ev.isRest.not and: evMatches and: {this.checkKeys(ev,plot)};
+                    var doPlot = ev.isRest.not and: evMatches;// and: {this.checkKeys(ev,plot)};
                     plot.top !? { yofs = plot.top };
 
                     if(ev.type==\plotPart and: evMatches) {
@@ -402,6 +448,7 @@ PatternPlotter {
                                 plot.state = IdentityDictionary.new; // should this be here? I guess so.
                                 plot.lastValueString = nil;
                                 plot.startX = x;
+                                ev.plotID.debug("plotPart begin [plotspec %]".format(i));
                             },
                             \end, {
                                 plot.baselineColor !? {
@@ -411,6 +458,7 @@ PatternPlotter {
                                     pen.lineDash = plot.baselineDash;
                                     pen.stroke;
                                 };
+                                ev.plotID.debug("plotPart end [plotspec %]".format(i));
                             }
                         );
                         doPlot = false; // actually not needed..
@@ -420,27 +468,26 @@ PatternPlotter {
 
                     if(doPlot) {
                         y = round(yofs+h-(this.parmap(ev,plot.y)*h));
-                        y0 = plot.y0 !? {round(yofs+h-(this.parmap(ev,plot.y0)*h))};
+//                        y0 = plot.y0 !? {round(yofs+h-(this.parmap(ev,plot.y0)*h))};
                         y1 = plot.y1 !? {round(yofs+h-(this.parmap(ev,plot.y1)*h))} ? y;
                         state = plot.state[id.asSymbol];
 
                         plot.state[id.asSymbol] = state.size.max(y.size).max(y1.size).collect {|n|
-                            var old, p, p1, lw, dotP;
+                            var old, p, p1, lw, ty, dotSize, type;
 
                             old = state !? {state.clipAt(n).old};
-                            p1 = (ev[plot.lenKey].value * xscale + x) @ y1.clipAt(n);
                             lw = this.parmapClip(ev,plot.lineWidth,n);
 
-                            if(y0.notNil) {
-                                p = if(state.isNil) {
-                                    x @ y0.clipAt(n);
-                                } {
-                                    old
-                                };
-                                dotP = p1;
+                            type = plot.type;
+                            if(type==\linear2) {
+                                p = (ev.dur * xscale + x) @ y1.clipAt(n);
+                                p1 = 0@0;
+                                ty = if(old.notNil) {old.y} {topY};
+                                type = \linear;
                             } {
                                 p = x @ y.clipAt(n);
-                                dotP = p;
+                                p1 = (ev[plot.lenKey].value * xscale + x) @ y1.clipAt(n);
+                                ty = p.y;
                             };
 
                             if(lw.asInteger.odd) { p.y = p.y + 0.5; p1.y = p1.y + 0.5 };
@@ -449,7 +496,7 @@ PatternPlotter {
                             pen.width = lw;
                             pen.lineDash = this.parmapClip(ev,plot.dash,n);
 
-                            switch(plot.type,
+                            switch(type,
                                 \linear, {
                                     old !? {
                                         pen.line(old, p);
@@ -483,32 +530,37 @@ PatternPlotter {
                                     old = nil;
                                 }
                             );
-                            if(lastP != p) {
+                            if(lastP != p) { //FIXME: avoid painting dots more than once at the same point
 //                            if(lastP != dotP) {
+//                            if(y0.notNil and: state.isNil,{[p,p1]},{[dotP]}).do {|dotP1|
                                 dotSize = this.parmapClip(ev,plot.dotSize,n);
                                 if(dotSize>0) {
                                     pen.fillColor = this.parmapClip(ev,plot.dotColor,n);
                                     switch(this.parmapClip(ev,plot.dotShape,n),
                                         \square, { pen.addRect(Rect.fromPoints(p-dotSize,p+dotSize)) },
-                                        { pen.addArc(dotP, dotSize, 0, 2pi) } //default is circle
+                                        { pen.addArc(p, dotSize, 0, 2pi) } //default is circle
                                     );
                                     pen.fill;
                                 };
-                                if(dotSize>0 or: {plot.type != \dots}) {
-                                    if(p.y > bottomY) { bottomY = p.y };
-                                    if(p.y < topY) { topY = p.y };
-                                };
+/*                                if(dotSize>0 or: {plot.type != \dots}) {
+                                    if(tp.y > bottomY) { bottomY = tp.y };
+                                    if(tp.y < topY) { topY = tp.y };
+                                };*/
                                 if(plot.valueLabel.notNil and:
                                 {(str=this.parmapClip(ev,plot.valueLabel,n).asString)!=plot.lastValueString}) {
                                     pen.font = this.parmapClip(ev,plot.valueLabelFont,n);
                                     pen.color = this.parmapClip(ev,plot.valueLabelColor,n);
-                                    pen.stringAtPoint(str,dotP + this.parmapClip(ev,plot.valueLabelOffset,n));
+                                    pen.stringAtPoint(str,p + this.parmapClip(ev,plot.valueLabelOffset,n));
                                     if(plot.valueLabelNoRepeat) {plot.lastValueString = str};
                                 };
                             };
                             lastP = p;
                             lastP1 = p1;
 
+                            if(plot.type != \dots or: {dotSize.notNil and: {dotSize>0}}) {
+                                if(ty > bottomY) { bottomY = ty };
+                                if(ty < topY) { topY = ty };
+                            };
                             (old:old); // return new state
                         }.clipExtend(y.size);
                     };
