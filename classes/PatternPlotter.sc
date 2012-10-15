@@ -261,6 +261,7 @@ PatternPlotter {
             y1: nil,
             height: 150,
             type: \levels,
+            baseline: 0,
 //            lenKey: \sustain,
             length: \sustain -> nil,
             label: nil,
@@ -299,7 +300,7 @@ PatternPlotter {
     plotMatchesEvent {|plot,ev|
         ^plot.plotIDs.isNil or: {
             plot.plotIDs.includes(ev.plotID)
-        } and: {plot.filter(ev)}
+        }
     }
 
     parmap {|e,v|
@@ -385,7 +386,8 @@ PatternPlotter {
             p.parent = defaults;
 //            p.usedKeys = defaults.usedKeys.copy;
             p.top !? { height = p.top };
-            p.baseline = height+p.padding+p.height+0.5;
+            p.yofs = height+p.padding;
+//            p.baseline = height+p.padding+p.height+0.5;
             height = height + (p.padding*2) + p.height;
             if(height > maxheight) {maxheight = height};
             this.processPlotSpec(p);
@@ -416,8 +418,9 @@ PatternPlotter {
             }
         };
         var plotEnd = {|plot|
+            var y = round(plot.yofs+(plot.height*(1-plot.baseline))) + 0.5;
             plot.baselineColor !? {
-                pen.line(plot.startX@plot.baseline,x@plot.baseline);
+                pen.line(plot.startX@y,x@y);
                 pen.width = 1;
                 pen.strokeColor = plot.baselineColor;
                 pen.lineDash = plot.baselineDash;
@@ -443,7 +446,7 @@ PatternPlotter {
                     var y, y1, lastP, lastP1;
                     var state;
                     var evMatches = this.plotMatchesEvent(plot,ev);
-                    var doPlot = ev.isRest.not and: evMatches;// and: {this.checkKeys(ev,plot)};
+                    var doPlot = ev.isRest.not and: evMatches and: {plot.filter(ev)};
                     plot.top !? { yofs = plot.top };
 
                     if(ev.type==\plotPart and: evMatches) {
