@@ -131,6 +131,13 @@ ASPen {
         }
     }
 
+    //NOTE: need to special case Pen.use: we don't want to save the function, but evaluate it now so it can produce the pen messages.
+    use {|func|
+        data = data.add([\push]);
+        func.value;
+        data = data.add([\pop]);
+    }
+
     doesNotUnderstand {|...msg|
         if(selectors.isNil) {
             selectors = Pen.implClass.class.methods.collectAs(_.name,IdentitySet)
