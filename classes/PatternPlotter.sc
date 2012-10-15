@@ -33,13 +33,14 @@ then the only thing in the plotPart events added are plotID..
 one solution would be to record all pen actions for the other graphics, and play them back only at part-end.
 perhaps there are simpler solutions..
 
-* simple western notation
+* improve the simple western notation
+- duration beams and stems, give beam y position?
+- handle notehead collision?
+- setting for accidental font, color and size
 - clef
-- stafflines
-- accidentals (no key)
-- note heads
-- stems going to a duration bar
-- notes with same duration are grouped into a chord
+- spelling of accidentals: user gives list of the five accidentals, -1 for flat and +1 for sharp?
+- automatic re-spelling of accidentals at collisions in chords?
+- white-outs at rests?
 
 * \linear2
 - needs to draw tick at last point
@@ -188,17 +189,10 @@ example:
 
 PplotPart {
     *new {|id=\noID, pattern|
-/*        ^Pseq([
-            (type: \plotPart, scope: \begin, isRest: true, dur: 0, plotID: id,
-            addToCleanup: { cleanups[id].do(_.value); cleanups.removeAt(id); }),
-            pattern <> (plotID: id),
-            (type: \plotPart, scope: \end, isRest: true, dur: 0, plotID: id),
-        ]);*/
         ^Prout({ | ev |
             var a, cleanup;
             cleanup = EventStreamCleanup.new;
-            a = (type: \plotPart, /*scope: \begin,*/ isRest: true, dur: 0, plotID: id, plotCleanupFuncs:List[]);
-//            cleanup.addFunction(a, { cleanups[id].do(_.value); cleanups.removeAt(id) });
+            a = (type: \plotPart, isRest: true, dur: 0, plotID: id, plotCleanupFuncs:List[]);
             cleanup.addFunction(a, { a.plotCleanupFuncs.do(_.value); a.plotCleanupFuncs.clear });
             ev = a.yield;
             ev = Pchain(pattern, (plotID: id)).embedInStream(ev);
@@ -258,8 +252,10 @@ PatternPlotter {
             length: \sustain -> nil,
             label: nil,
             lineWidth: 1,
+            lineHeight: 3, // for \notes
+            octave: 0, // for \notes
             padding: 20,
-            dotSize: 2.5,
+            dotSize: nil, //2.5,
             dotColor: Color.black,
             dotShape: \circle,
             labelColor: Color(0.3,0.6,0.4),
@@ -410,18 +406,51 @@ PatternPlotter {
             }
         };
         var plotEnd = {|plot, x|
-            var y = round(plot.yofs+(plot.height*(1-plot.baseline))) + 0.5;
             if(plot.isActive == true) {
-                plot.baselineColor !? {
-                    pen.line(plot.startX@y,x@y);
+                if(plot.type==\notes) {
+                    var yy = round(plot.height/2+(plot.lineHeight*2.5)+plot.yofs-plot.padding);
+                    5.do {|i|
+                        var y = yy-(i*plot.lineHeight*2) + 0.5;
+                        pen.line((plot.startX-6)@y,(x+6)@y);
+                    };
                     pen.width = 1;
-                    pen.strokeColor = plot.baselineColor;
+                    pen.strokeColor = plot.baselineColor ?? {Color.black};
                     pen.lineDash = plot.baselineDash;
                     pen.stroke;
+                } {
+                    var y = round(plot.yofs+(plot.height*(1-plot.baseline))) + 0.5;
+                    plot.baselineColor !? {
+                        pen.line(plot.startX@y,x@y);
+                        pen.width = 1;
+                        pen.strokeColor = plot.baselineColor;
+                        pen.lineDash = plot.baselineDash;
+                        pen.stroke;
+                    };
                 };
                 plot.isActive = false;
             };
         };
+        var doHelpLines = {|plot,v,end,op,x,yy|
+            var y;
+            if(v.perform(op,end)) {
+                (v..end).do {|a|
+                    if(a.even) {
+                        y = round(yy-(a*plot.lineHeight))+0.5;
+                        pen.line((x-6)@y,(x+6)@y);
+                    };
+                };
+                pen.width = 1;
+//                pen.strokeColor=Color.gray(0.5); // FIXME
+                pen.strokeColor = plot.baselineColor ?? {Color.gray};
+                pen.stroke;
+            };
+        };
+        // sharps only
+        // var noteLines = [0,0,1,1,2,3,3,4,4,5,5,6];
+        // var noteAccidentals = [0,1,0,1,0,0,1,0,1,0,1,0];
+        // flats only
+        var noteLines = [0,1,1,2,2,3,4,4,5,5,6,6];
+        var noteAccidentals = [0,-1,0,-1,0,0,-1,0,-1,0,-1,0];
 
         while { (ev = stream.next(defaultEvent)).notNil } {
             case
@@ -494,6 +523,10 @@ PatternPlotter {
                             pen.width = lw;
                             pen.lineDash = this.parmapClip(ev,plot.dash,n);
 
+                            if(plot.include.notNil and: {this.parmapClip(ev,plot.include,n)!=true}) {
+                                type = \skip;
+                            };
+
                             switch(type,
                                 \linear, {
                                     old !? {
@@ -526,38 +559,79 @@ PatternPlotter {
                                 },
                                 \dots, {
                                     old = nil;
+                                },
+                                \notes, {
+                                    var m = this.parmapClip(ev,plot.y,n);
+                                    var oct = m div: 12;
+                                    var line = noteLines[m%12]+(oct-(plot.octave+5) * 7 - 2);
+                                    var acc = noteAccidentals[m%12];
+                                    var lh = plot.lineHeight;
+                                    var yy = round(plot.height/2+(lh*2.5) + yofs - plot.padding);
+                                    var y2 = round(yy-(line*lh)); //+0.5;
+                                    var p2 = (this.parmapClip(ev,plot.length,n) * xscale + x) @ round(y2);
+                                    p = x@round(y2); // used by valueLabel..
+                                    ty = y2; // used by tick drawing
+
+                                    if(lw.asInteger.odd) { p.y = p.y + 0.5; p2.y = p2.y + 0.5 };
+                                    // FIXME: for chords, we should not draw helplines ontop of old noteheads!
+                                    // need to save max helpline number in state?
+                                    pen.use {
+                                        doHelpLines.value(plot,line,-1,'<=',x,yy);
+                                        doHelpLines.value(plot,line,10,'>=',x,yy);
+                                    };
+
+                                    if(lw>0) {
+                                        pen.line(p.x+(lh*2-1) @ p.y,p2); // duration line
+                                        pen.stroke;
+                                    };
+
+                                    pen.addOval(Rect(x-(lh+0.5),y2-(lh-0.5),lh*2+1,lh*2-1));
+                                    pen.fillColor = this.parmapClip(ev,plot.color,n);
+                                    pen.use {
+                                        pen.rotate(-0.4,x,y2);
+//                                        pen.width = 1;
+//                                        pen.strokeColor = Color.white; // test
+//                                        pen.fillStroke;
+                                        pen.fill;
+                                    };
+                                    case
+                                    {acc>0} {
+                                        pen.font = Font.sansSerif(14); // FIXME
+                                        pen.stringInRect("#",Rect(x-13,y2-6,10,20)); // FIXME
+                                    }
+                                    {acc<0} {
+                                        pen.font = Font.sansSerif(12); // FIXME
+                                        pen.stringInRect("b",Rect(x-13,y2-6,10,20)); // FIXME
+                                    };
                                 }
                             );
-                            if(lastP != p) { //FIXME: avoid painting dots more than once at the same point
-//                            if(lastP != dotP) {
-//                            if(y0.notNil and: state.isNil,{[p,p1]},{[dotP]}).do {|dotP1|
-                                dotSize = this.parmapClip(ev,plot.dotSize,n);
-                                if(dotSize>0) {
-                                    pen.fillColor = this.parmapClip(ev,plot.dotColor,n);
-                                    switch(this.parmapClip(ev,plot.dotShape,n),
-                                        \square, { pen.addRect(Rect.fromPoints(p-dotSize,p+dotSize)) },
-                                        { pen.addArc(p, dotSize, 0, 2pi) } //default is circle
-                                    );
-                                    pen.fill;
-                                };
-/*                                if(dotSize>0 or: {plot.type != \dots}) {
-                                    if(tp.y > bottomY) { bottomY = tp.y };
-                                    if(tp.y < topY) { topY = tp.y };
-                                };*/
-                                if(plot.valueLabel.notNil and:
-                                {(str=this.parmapClip(ev,plot.valueLabel,n).asString)!=plot.lastValueString}) {
-                                    pen.font = this.parmapClip(ev,plot.valueLabelFont,n);
-                                    pen.color = this.parmapClip(ev,plot.valueLabelColor,n);
-                                    pen.stringAtPoint(str,p + this.parmapClip(ev,plot.valueLabelOffset,n));
-                                    if(plot.valueLabelNoRepeat) {plot.lastValueString = str};
-                                };
-                            };
-                            lastP = p;
-                            lastP1 = p1;
 
-                            if(plot.type != \dots or: {dotSize.notNil and: {dotSize>0}}) {
-                                if(ty > bottomY) { bottomY = ty };
-                                if(ty < topY) { topY = ty };
+                            if(type!=\skip) {
+                                if(lastP != p) {
+                                    dotSize = plot.dotSize !? {this.parmapClip(ev,plot.dotSize,n)} ?? {if(plot.type==\notes,0,2.5)};
+                                    if(dotSize>0) {
+                                        pen.fillColor = this.parmapClip(ev,plot.dotColor,n);
+                                        switch(this.parmapClip(ev,plot.dotShape,n),
+                                            \square, { pen.addRect(Rect.fromPoints(p-dotSize,p+dotSize)) },
+                                            { pen.addArc(p, dotSize, 0, 2pi) } //default is circle
+                                        );
+                                        pen.fill;
+                                    };
+                                    if(plot.valueLabel.notNil and:
+                                        {(str=this.parmapClip(ev,plot.valueLabel,n).asString)!=plot.lastValueString}) {
+                                        pen.font = this.parmapClip(ev,plot.valueLabelFont,n);
+                                        pen.color = this.parmapClip(ev,plot.valueLabelColor,n);
+                                        pen.stringAtPoint(str,p + this.parmapClip(ev,plot.valueLabelOffset,n));
+                                        if(plot.valueLabelNoRepeat) {plot.lastValueString = str};
+                                    };
+                                };
+                                lastP = p;
+                                lastP1 = p1;
+
+                                if(plot.type != \dots or: {dotSize.notNil and: {dotSize>0}}) {
+                                    if(ty > bottomY) { bottomY = ty };
+                                    if(ty < topY) { topY = ty };
+                                };
                             };
                             (old:old); // return new state
                         }.clipExtend(y.size); // state collect
