@@ -186,17 +186,27 @@ example:
 ********************************************************************/
 
 PplotPart {
-    classvar <> cleanups;
-    *initClass {
-        cleanups = IdentityDictionary.new;
-    }
+    // classvar <> cleanups;
+    // *initClass {
+    //     cleanups = IdentityDictionary.new;
+    // }
     *new {|id=\noID, pattern|
-        ^Pseq([
+/*        ^Pseq([
             (type: \plotPart, scope: \begin, isRest: true, dur: 0, plotID: id,
             addToCleanup: { cleanups[id].do(_.value); cleanups.removeAt(id); }),
             pattern <> (plotID: id),
             (type: \plotPart, scope: \end, isRest: true, dur: 0, plotID: id),
-        ]);
+        ]);*/
+        ^Prout({ | ev |
+            var a, cleanup;
+            cleanup = EventStreamCleanup.new;
+            a = (type: \plotPart, /*scope: \begin,*/ isRest: true, dur: 0, plotID: id, plotCleanupFuncs:List[]);
+//            cleanup.addFunction(a, { cleanups[id].do(_.value); cleanups.removeAt(id) });
+            cleanup.addFunction(a, { a.plotCleanupFuncs.do(_.value); a.plotCleanupFuncs.clear });
+            ev = a.yield;
+            ev = Pchain(pattern, (plotID: id)).embedInStream(ev);
+            cleanup.exit(ev);
+        });
     }
 }
 
@@ -387,7 +397,7 @@ PatternPlotter {
     }
 
     draw {|pen=(Pen)|
-        var stream = pattern.asStream;
+        var stream = Pfindur(length,pattern).asStream;
         var t = 0;
         var x;
         var yofs;
@@ -415,9 +425,10 @@ PatternPlotter {
                 plot.isActive = false;
             };
         };
-        var cleanup = EventStreamCleanup();
-        // FIXME: at t>length or ev.isNil, close all parts that hasn't ended yet (dangling \begin's)
-        while { ev = stream.next(defaultEvent); t<=length and: {ev.notNil} } {
+//        var cleanup = EventStreamCleanup();
+
+//        while { ev = stream.next(defaultEvent); t<=length and: {ev.notNil} } {
+        while { (ev = stream.next(defaultEvent)).notNil } {
             case
             {ev.isKindOf(SimpleNumber)} { t = t + ev }
             {ev.class===Event} { ev.use {
@@ -436,8 +447,8 @@ PatternPlotter {
                     plot.top !? { yofs = plot.top };
 
                     if(ev.type==\plotPart and: evMatches) {
-                        switch(ev.scope,
-                            \begin, {
+                        // switch(ev.scope,
+                        //     \begin, {
                                 //NOTE: if a plotSpec matches several plotPart events, it will be begun several times
                                 //but we don't want to open it more than once.. so we only open it on the first one.
                                 //this might be a problem if the matching plotParts are not synchronized in time..
@@ -460,18 +471,19 @@ PatternPlotter {
                                     // and here just put the function in a global dict, with plotID as the key.
                                     // Not sure this is OK, if multiple plotSpecs match the same ID??
                                     // nope.. how about we make a list of functions?
-                                    cleanup.update(ev);
-                                    PplotPart.cleanups[id] = PplotPart.cleanups[id].add {
+//                                    cleanup.update(ev);
+//                                    PplotPart.cleanups[id] = PplotPart.cleanups[id].add {
+                                    ev.plotCleanupFuncs.add {
                                         plot.plotIDs.debug("plotPart cleanup [plotspec %]".format(i));
                                         plotEnd.value(plot, x);
                                     };
                                 };
-                            },
-                            \end, {
-                                ev.plotID.debug("plotPart end [plotspec %]".format(i));
-                                plotEnd.value(plot, x);
-                            }
-                        );
+                        // },
+                        // \end, {
+                        //     ev.plotID.debug("plotPart end [plotspec %]".format(i));
+                        //     plotEnd.value(plot, x);
+                        // }
+                        // );
                         doPlot = false; // actually not needed..
                     };
 
@@ -597,8 +609,14 @@ PatternPlotter {
                 plot.plotIDs.debug("plotPart end [plotspec %]".format(i));
             }
         };*/
-        "Cleaning up".postln;
-        cleanup.exit(());
+
+        // NOTE: this is only for when we ended because of t > length.
+        // we could get rid of this by using Pfindur to set the time limit instead
+        // if(ev.notNil) {
+        //     "Cleaning up".postln;
+        //     cleanup.exit(());
+        // };
+
         // draw the last tick
         drawTick.value;
     }
