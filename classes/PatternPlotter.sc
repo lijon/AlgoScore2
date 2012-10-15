@@ -8,22 +8,11 @@ todo:
 
 * rename to ASPatternPlotter and ASPlotPart?
 
-* instead of lenKey, use an ordinary plotspec map? then we can have this fixed, or calculated by a function, etc..
-
-* there is a problem with matching plotspecs through the mapped keys,
-it works fine for the plotted events, but plotPart events does not have any keys so there we can only check for plotIDs,
-which mean they will match any plotspecs that would filter on keys but has no plotIDs specified..
-
-so, I guess we need to enforce the use of plotIDs. perhaps rename to "plotParts".
-then we can get rid of the matched keys thing alltogether. just make sure we don't get errors in case event does not contain the key asked for, etc..
-(we might get "nil does not understand '*'" etc.. otherwise)
-
 * problem with Pfindur in some cases, since it cuts of the stream before the plotpart end event..
 so, not sure how to solve that generally, but PatternPlotter needs to act like there was a plotPart end whenever the stream ends.
 
 cases like this is no problem: Pseq([ Pfindur(x, pat1).plotPart(1), Pbind().plotPart(2) ])
 problem is when we have something like this: Pseq([ Pfindur(x, Ppar([pat1.plotPart(1), pat2.plotPart(2)])), pat3.plotPart(3) ])
-I guess also
 
 one solution might be to add a .plotEnds(1,2) after the Pfindur! plotPart events are not bound to the actual pattern, they only mark the start or stop of a part. So we can allow to separate this when needed:
 
@@ -35,6 +24,9 @@ Pseq([ Pfindur(x, Ppar([pat1.plotPart(1), pat2.plotPart(2)])).plotEnds(1,2), pat
 
 perhaps we could even build in a check so that a plotPart can't begin or end twice in a row.
 keep state somewhere.. IdentitySet activeParts[id]
+
+also... why do we need to give (1,2) to the plotEnds above? we should be able to detect that part 1 and 2 was started within the Pfindur and therefore must end there.
+
 
 * when getting the full length of a pattern (assuming it ends), we won't know the width in pixels..
 perhaps we should use ASPen from the start, and generate the pen instructions when setting the pattern.
@@ -140,7 +132,6 @@ plotSpec keys:
 
     type        \linear, \steps, \levels, \bargraph, \dots
     height      the height of this plot in pixels
-    lenKey      the pattern event key to use for line length in \levels type
     label       custom label, or nil to use the pattern key of y param
     labelColor  color of label
     labelFont   font of label
@@ -156,6 +147,7 @@ plotSpec keys:
     y           vertical position of data point (in the range 0.0 - 1.0)
     y1          vertical position for end point for type \levels
                 y and y1 can multichannel expand if the associated event key returns an array
+    length      the pattern event key to use for line length in \levels type
     lineWidth   line width (pixels)
     padding     top and bottom padding (pixels)
     dotSize     size of data point circle (pixels)
@@ -215,6 +207,11 @@ PplotPart {
             pattern,
             (type: \plotPart, scope: \end, isRest: true, dur: 0),
         ]) <> (plotID: id);
+        // ^Pseq([
+        //     (type: \plotPart, scope: \begin, isRest: true, dur: 0, plotID: id),
+        //     pattern <> (plotID: id),
+        //     (type: \plotPart, scope: \end, isRest: true, dur: 0, plotID: id),
+        // ]);
     }
 }
 
@@ -239,7 +236,7 @@ PatternPlotter {
     classvar mappableSymbols;
 
     *initClass {
-        mappableSymbols = IdentitySet[\y,\y0,\y1,\lineWidth,\dotSize,\dotColor,\valueLabel,\valueLabelColor,\valueLabelFont,\valueLabelOffset,\dash,\color];
+        mappableSymbols = IdentitySet[\y,\y0,\y1,\lineWidth,\dotSize,\dotColor,\valueLabel,\valueLabelColor,\valueLabelFont,\valueLabelOffset,\dash,\color,\length];
     }
 
     *new {|pattern,defaults,plotSpecs|
@@ -264,7 +261,8 @@ PatternPlotter {
             y1: nil,
             height: 150,
             type: \levels,
-            lenKey: \sustain,
+//            lenKey: \sustain,
+            length: \sustain -> nil,
             label: nil,
             lineWidth: 1,
             padding: 20,
@@ -323,7 +321,7 @@ PatternPlotter {
 //            if(v.value.isKindOf(AbstractFunction)) {
 //                v.multiChannelPerform(\value,e)
 //            } {
-                [v.value]
+            [v.value(e)]
 //            }
             //            }
         }
@@ -417,6 +415,17 @@ PatternPlotter {
                 pen.stroke;
             }
         };
+        var plotEnd = {|plot|
+            plot.baselineColor !? {
+                pen.line(plot.startX@plot.baseline,x@plot.baseline);
+                pen.width = 1;
+                pen.strokeColor = plot.baselineColor;
+                pen.lineDash = plot.baselineDash;
+                pen.stroke;
+            };
+            plot.isActive = false;
+
+        };
 
         // FIXME: at t>length or ev.isNil, close all parts that hasn't ended yet (dangling \begin's)
         while { ev = stream.next(defaultEvent); t<=length and: {ev.notNil} } {
@@ -424,7 +433,7 @@ PatternPlotter {
             {ev.isKindOf(SimpleNumber)} { t = t + ev }
             {ev.class===Event} { ev.use {
                 var str;
-                var id = ev.plotID ? \defaultID;
+                var id = ev.plotID ? \noID;
 
                 x = round(t * xscale) + 0.5 + leftMargin;
                 yofs = 0;
@@ -440,24 +449,34 @@ PatternPlotter {
                     if(ev.type==\plotPart and: evMatches) {
                         switch(ev.scope,
                             \begin, {
-                                plot.label !? {
-                                    pen.font = plot.labelFont;
-                                    pen.color = plot.labelColor;
-                                    pen.stringAtPoint(plot.label,(x+labelMargin)@(round(yofs)+0.5));
+                                //NOTE: if a plotSpec matches several plotPart events, it will be begun several times
+                                //but we don't want to open it more than once.. so we only open it on the first one.
+                                //this might be a problem if the matching plotParts are not synchronized in time..
+                                //then the plotSpec will be closed when the first plotPart ends.
+                                //So, should we use a reference counter, or keep the isActive flag separated by plotID?
+                                //I think ref counter, since it's the plotSpec that is opened/closed, not the plotPart?
+                                if(plot.isActive!=true) {
+                                    plot.label !? {
+                                        pen.font = plot.labelFont;
+                                        pen.color = plot.labelColor;
+                                        pen.stringAtPoint(plot.label,(x+labelMargin)@(round(yofs)+0.5));
+                                    };
+                                    plot.state = IdentityDictionary.new; // should this be here? I guess so.
+                                    plot.lastValueString = nil;
+                                    plot.startX = x;
+                                    plot.isActive = true;
+                                    ev.plotID.debug("plotPart begin [plotspec %]".format(i));
                                 };
-                                plot.state = IdentityDictionary.new; // should this be here? I guess so.
-                                plot.lastValueString = nil;
-                                plot.startX = x;
-                                ev.plotID.debug("plotPart begin [plotspec %]".format(i));
                             },
                             \end, {
-                                plot.baselineColor !? {
+/*                                plot.baselineColor !? {
                                     pen.line(plot.startX@plot.baseline,x@plot.baseline);
                                     pen.width = 1;
                                     pen.strokeColor = plot.baselineColor;
                                     pen.lineDash = plot.baselineDash;
                                     pen.stroke;
-                                };
+                                };*/
+                                plotEnd.value(plot);
                                 ev.plotID.debug("plotPart end [plotspec %]".format(i));
                             }
                         );
@@ -486,7 +505,8 @@ PatternPlotter {
                                 type = \linear;
                             } {
                                 p = x @ y.clipAt(n);
-                                p1 = (ev[plot.lenKey].value * xscale + x) @ y1.clipAt(n);
+//                                p1 = (ev[plot.lenKey].value * xscale + x) @ y1.clipAt(n);
+                                p1 = (this.parmapClip(ev,plot.length,n) * xscale + x) @ y1.clipAt(n);
                                 ty = p.y;
                             };
 
@@ -562,10 +582,10 @@ PatternPlotter {
                                 if(ty < topY) { topY = ty };
                             };
                             (old:old); // return new state
-                        }.clipExtend(y.size);
-                    };
+                        }.clipExtend(y.size); // state collect
+                    }; //if doPlot
                     yofs = yofs + h + plot.padding;
-                };
+                }; //plotSpecs loop
 
                 if(tickFullHeight) {
                     topY = 0;
@@ -579,6 +599,12 @@ PatternPlotter {
                 }
             }} // case event
         }; // event iteration loop
+        plotSpecs.do {|plot,i|
+            if(plot.isActive==true) {
+                plotEnd.value(plot);
+                plot.plotIDs.debug("plotPart end [plotspec %]".format(i));
+            }
+        };
         // draw the last tick
         drawTick.value;
     }
