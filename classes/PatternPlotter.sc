@@ -120,6 +120,7 @@ plotSpec keys:
     label       custom label, or nil to use the pattern key of y param
     labelColor  color of label
     labelFont   font of label
+    baseline    position of baseline (0.0 to 1.0)
     baselineColor color of horizontal bottom line, nil to hide
     baselineDash line dash for horizontal bottom line
     valueLabelNoRepeat if true, only draw value label if it changed from last data point
@@ -186,10 +187,6 @@ example:
 ********************************************************************/
 
 PplotPart {
-    // classvar <> cleanups;
-    // *initClass {
-    //     cleanups = IdentityDictionary.new;
-    // }
     *new {|id=\noID, pattern|
 /*        ^Pseq([
             (type: \plotPart, scope: \begin, isRest: true, dur: 0, plotID: id,
@@ -425,9 +422,7 @@ PatternPlotter {
                 plot.isActive = false;
             };
         };
-//        var cleanup = EventStreamCleanup();
 
-//        while { ev = stream.next(defaultEvent); t<=length and: {ev.notNil} } {
         while { (ev = stream.next(defaultEvent)).notNil } {
             case
             {ev.isKindOf(SimpleNumber)} { t = t + ev }
@@ -447,43 +442,22 @@ PatternPlotter {
                     plot.top !? { yofs = plot.top };
 
                     if(ev.type==\plotPart and: evMatches) {
-                        // switch(ev.scope,
-                        //     \begin, {
-                                //NOTE: if a plotSpec matches several plotPart events, it will be begun several times
-                                //but we don't want to open it more than once.. so we only open it on the first one.
-                                //this might be a problem if the matching plotParts are not synchronized in time..
-                                //then the plotSpec will be closed when the first plotPart ends.
-                                //So, should we use a reference counter, or keep the isActive flag separated by plotID?
-                                //I think ref counter, since it's the plotSpec that is opened/closed, not the plotPart?
-                                if(plot.isActive!=true) {
-                                    ev.plotID.debug("plotPart begin [plotspec %]".format(i));
-                                    plot.label !? {
-                                        pen.font = plot.labelFont;
-                                        pen.color = plot.labelColor;
-                                        pen.stringAtPoint(plot.label,(x+labelMargin)@(round(yofs)+0.5));
-                                    };
-                                    plot.state = IdentityDictionary.new; // should this be here? I guess so.
-                                    plot.lastValueString = nil;
-                                    plot.startX = x;
-                                    plot.isActive = true;
-
-                                    // Ok, the only way I found to get this working is to add the cleanup function in PplotPart,
-                                    // and here just put the function in a global dict, with plotID as the key.
-                                    // Not sure this is OK, if multiple plotSpecs match the same ID??
-                                    // nope.. how about we make a list of functions?
-//                                    cleanup.update(ev);
-//                                    PplotPart.cleanups[id] = PplotPart.cleanups[id].add {
-                                    ev.plotCleanupFuncs.add {
-                                        plot.plotIDs.debug("plotPart cleanup [plotspec %]".format(i));
-                                        plotEnd.value(plot, x);
-                                    };
-                                };
-                        // },
-                        // \end, {
-                        //     ev.plotID.debug("plotPart end [plotspec %]".format(i));
-                        //     plotEnd.value(plot, x);
-                        // }
-                        // );
+                        if(plot.isActive!=true) {
+                            ev.plotID.debug("plotPart begin [plotspec %]".format(i));
+                            plot.label !? {
+                                pen.font = plot.labelFont;
+                                pen.color = plot.labelColor;
+                                pen.stringAtPoint(plot.label,(x+labelMargin)@(round(yofs)+0.5));
+                            };
+                            plot.state = IdentityDictionary.new; // should this be here? I guess so.
+                            plot.lastValueString = nil;
+                            plot.startX = x;
+                            plot.isActive = true;
+                            ev.plotCleanupFuncs.add {
+                                plot.plotIDs.debug("plotPart cleanup [plotspec %]".format(i));
+                                plotEnd.value(plot, x);
+                            };
+                        };
                         doPlot = false; // actually not needed..
                     };
 
@@ -603,19 +577,6 @@ PatternPlotter {
                 }
             }} // case event
         }; // event iteration loop
-/*        plotSpecs.do {|plot,i|
-            if(plot.isActive==true) {
-                plotEnd.value(plot);
-                plot.plotIDs.debug("plotPart end [plotspec %]".format(i));
-            }
-        };*/
-
-        // NOTE: this is only for when we ended because of t > length.
-        // we could get rid of this by using Pfindur to set the time limit instead
-        // if(ev.notNil) {
-        //     "Cleaning up".postln;
-        //     cleanup.exit(());
-        // };
 
         // draw the last tick
         drawTick.value;
