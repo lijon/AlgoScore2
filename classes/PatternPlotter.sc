@@ -8,25 +8,12 @@ todo:
 
 * rename to ASPatternPlotter and ASPlotPart?
 
-* problem with Pfindur in some cases, since it cuts of the stream before the plotpart end event..
-so, not sure how to solve that generally, but PatternPlotter needs to act like there was a plotPart end whenever the stream ends.
+* one thing we need to think about:
+say we have two parallell plotParts: a and b
+and a plotSpec that matches both (merges) a and b
+if b ends before a, should the plotSpec be closed (plotPart end)? currently it is. but will keep plotting after its end, since a is still running..
 
-cases like this is no problem: Pseq([ Pfindur(x, pat1).plotPart(1), Pbind().plotPart(2) ])
-problem is when we have something like this: Pseq([ Pfindur(x, Ppar([pat1.plotPart(1), pat2.plotPart(2)])), pat3.plotPart(3) ])
-
-one solution might be to add a .plotEnds(1,2) after the Pfindur! plotPart events are not bound to the actual pattern, they only mark the start or stop of a part. So we can allow to separate this when needed:
-
-Pseq([ Pfindur(x, Ppar([pat1.plotID(1), pat2.plotID(2)])).plotParts(1,2), pat3.plotPart(3) ])
-
-or, since the begin's will already be there:
-
-Pseq([ Pfindur(x, Ppar([pat1.plotPart(1), pat2.plotPart(2)])).plotEnds(1,2), pat3.plotPart(3) ])
-
-perhaps we could even build in a check so that a plotPart can't begin or end twice in a row.
-keep state somewhere.. IdentitySet activeParts[id]
-
-also... why do we need to give (1,2) to the plotEnds above? we should be able to detect that part 1 and 2 was started within the Pfindur and therefore must end there.
-
+possibly it would make more sense to close the plotSpec when all matching plotParts has ended? and open it when any of them has started?
 
 * when getting the full length of a pattern (assuming it ends), we won't know the width in pixels..
 perhaps we should use ASPen from the start, and generate the pen instructions when setting the pattern.
@@ -53,8 +40,6 @@ perhaps there are simpler solutions..
 - note heads
 - stems going to a duration bar
 - notes with same duration are grouped into a chord
-
-* the processing in plotSpecs_ setter needs to be done for the defaults too!
 
 * \linear2
 - needs to draw tick at last point
@@ -201,17 +186,17 @@ example:
 ********************************************************************/
 
 PplotPart {
+    classvar <> cleanups;
+    *initClass {
+        cleanups = IdentityDictionary.new;
+    }
     *new {|id=\noID, pattern|
         ^Pseq([
-            (type: \plotPart, scope: \begin, isRest: true, dur: 0),
-            pattern,
-            (type: \plotPart, scope: \end, isRest: true, dur: 0),
-        ]) <> (plotID: id);
-        // ^Pseq([
-        //     (type: \plotPart, scope: \begin, isRest: true, dur: 0, plotID: id),
-        //     pattern <> (plotID: id),
-        //     (type: \plotPart, scope: \end, isRest: true, dur: 0, plotID: id),
-        // ]);
+            (type: \plotPart, scope: \begin, isRest: true, dur: 0, plotID: id,
+            addToCleanup: { cleanups[id].do(_.value); cleanups.removeAt(id); }),
+            pattern <> (plotID: id),
+            (type: \plotPart, scope: \end, isRest: true, dur: 0, plotID: id),
+        ]);
     }
 }
 
@@ -417,19 +402,20 @@ PatternPlotter {
                 pen.stroke;
             }
         };
-        var plotEnd = {|plot|
+        var plotEnd = {|plot, x|
             var y = round(plot.yofs+(plot.height*(1-plot.baseline))) + 0.5;
-            plot.baselineColor !? {
-                pen.line(plot.startX@y,x@y);
-                pen.width = 1;
-                pen.strokeColor = plot.baselineColor;
-                pen.lineDash = plot.baselineDash;
-                pen.stroke;
+            if(plot.isActive == true) {
+                plot.baselineColor !? {
+                    pen.line(plot.startX@y,x@y);
+                    pen.width = 1;
+                    pen.strokeColor = plot.baselineColor;
+                    pen.lineDash = plot.baselineDash;
+                    pen.stroke;
+                };
+                plot.isActive = false;
             };
-            plot.isActive = false;
-
         };
-
+        var cleanup = EventStreamCleanup();
         // FIXME: at t>length or ev.isNil, close all parts that hasn't ended yet (dangling \begin's)
         while { ev = stream.next(defaultEvent); t<=length and: {ev.notNil} } {
             case
@@ -459,6 +445,7 @@ PatternPlotter {
                                 //So, should we use a reference counter, or keep the isActive flag separated by plotID?
                                 //I think ref counter, since it's the plotSpec that is opened/closed, not the plotPart?
                                 if(plot.isActive!=true) {
+                                    ev.plotID.debug("plotPart begin [plotspec %]".format(i));
                                     plot.label !? {
                                         pen.font = plot.labelFont;
                                         pen.color = plot.labelColor;
@@ -468,19 +455,21 @@ PatternPlotter {
                                     plot.lastValueString = nil;
                                     plot.startX = x;
                                     plot.isActive = true;
-                                    ev.plotID.debug("plotPart begin [plotspec %]".format(i));
+
+                                    // Ok, the only way I found to get this working is to add the cleanup function in PplotPart,
+                                    // and here just put the function in a global dict, with plotID as the key.
+                                    // Not sure this is OK, if multiple plotSpecs match the same ID??
+                                    // nope.. how about we make a list of functions?
+                                    cleanup.update(ev);
+                                    PplotPart.cleanups[id] = PplotPart.cleanups[id].add {
+                                        plot.plotIDs.debug("plotPart cleanup [plotspec %]".format(i));
+                                        plotEnd.value(plot, x);
+                                    };
                                 };
                             },
                             \end, {
-/*                                plot.baselineColor !? {
-                                    pen.line(plot.startX@plot.baseline,x@plot.baseline);
-                                    pen.width = 1;
-                                    pen.strokeColor = plot.baselineColor;
-                                    pen.lineDash = plot.baselineDash;
-                                    pen.stroke;
-                                };*/
-                                plotEnd.value(plot);
                                 ev.plotID.debug("plotPart end [plotspec %]".format(i));
+                                plotEnd.value(plot, x);
                             }
                         );
                         doPlot = false; // actually not needed..
@@ -602,12 +591,14 @@ PatternPlotter {
                 }
             }} // case event
         }; // event iteration loop
-        plotSpecs.do {|plot,i|
+/*        plotSpecs.do {|plot,i|
             if(plot.isActive==true) {
                 plotEnd.value(plot);
                 plot.plotIDs.debug("plotPart end [plotspec %]".format(i));
             }
-        };
+        };*/
+        "Cleaning up".postln;
+        cleanup.exit(());
         // draw the last tick
         drawTick.value;
     }
