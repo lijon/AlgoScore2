@@ -151,3 +151,6 @@ ASPen {
     }
 }
 
++ Number {
+    @* {|y| ^ASPoint(this,y) }
+}

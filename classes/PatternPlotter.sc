@@ -8,6 +8,10 @@ todo:
 
 * rename to ASPatternPlotter and ASPlotPart?
 
+* make use of ASPoint (@*) and add zoom and xscale to gui
+
+* add printing (QPenPrinter) to gui
+
 * one thing we need to think about:
 say we have two parallell plotParts: a and b
 and a plotSpec that matches both (merges) a and b
@@ -33,14 +37,19 @@ then the only thing in the plotPart events added are plotID..
 one solution would be to record all pen actions for the other graphics, and play them back only at part-end.
 perhaps there are simpler solutions..
 
+* multiline labels
+
 * improve the simple western notation
 - duration beams and stems, give beam y position?
-- handle notehead collision?
+- handle notehead and accidentals collision?
 - setting for accidental font, color and size
-- clef
+- clef. use some font? or try to convert an SVG to pen instructions?
 - spelling of accidentals: user gives list of the five accidentals, -1 for flat and +1 for sharp?
 - automatic re-spelling of accidentals at collisions in chords?
 - white-outs at rests?
+- also support alternative 5-line chromatic staff
+- marks, symbols, etc..
+- gliss (connect from old to p with line)
 
 * \linear2
 - needs to draw tick at last point
@@ -121,9 +130,11 @@ plotSpec keys:
     label       custom label, or nil to use the pattern key of y param
     labelColor  color of label
     labelFont   font of label
+    labelOffset offset of label
     baseline    position of baseline (0.0 to 1.0)
     baselineColor color of horizontal bottom line, nil to hide
     baselineDash line dash for horizontal bottom line
+    padding     top and bottom padding (pixels)
     valueLabelNoRepeat if true, only draw value label if it changed from last data point
     plotID      only plot this if the pattern event has a plotID that matches this,
                 can be nil to match all (default), or a collection to match several.
@@ -136,7 +147,8 @@ plotSpec keys:
                 y and y1 can multichannel expand if the associated event key returns an array
     length      the pattern event key to use for line length in \levels type
     lineWidth   line width (pixels)
-    padding     top and bottom padding (pixels)
+    lineHeight  spacing between pitches for type \notes
+    octave      octave for staff, 0 is with midinote 60 (C) at first bottom help-line. valid for type \notes only
     dotSize     size of data point circle (pixels)
     dotColor    color of data point circle (Color)
     dotShape    \circle or \square (Symbol)
@@ -164,7 +176,7 @@ plotSpec keys:
 internal plotSpec keys:
 
     state       saved state from last data point
-    baseline    pixel position of baseline
+    yofs        pixel position of plot
     usedKeys    a Set of pattern event keys used by this plotSpec
     lastValueString the value label string from last data point
 
@@ -207,7 +219,6 @@ PatternPlotter {
         <xscale = 50, // pixels per second (time zoom level)
         <leftMargin = 10,
         <rightMargin = 10,
-        <>labelMargin = 0, // move to plotSpec
         <>defaultEvent;
 
     var <>tickColor,
@@ -219,6 +230,8 @@ PatternPlotter {
 
     var <bounds;
 
+    var penRecorder;
+
     classvar mappableSymbols;
 
     *initClass {
@@ -229,14 +242,14 @@ PatternPlotter {
         ^super.new.init(pattern, defaults, plotSpecs);
     }
 
-    gui {|scale=1|
+    gui {|scale=1,xzoom=1|
         var rct = Rect(0,0,bounds.width*scale,bounds.height*scale);
         var bnd = (rct+Rect(0,0,20,20)) & Rect(0,0,800,600);
         var win = Window("Pattern Plot",bnd).front;
-        var scr = ScrollView(win, bnd).resize_(5);
-        UserView(scr,rct).background_(Color.white).drawFunc_({|v|
+        var scr = ScrollView(win, bnd).background_(Color.white).resize_(5);
+        UserView(scr,rct).drawFunc_({|v|
             Pen.scale(scale,scale);
-            this.draw;
+            this.draw(Pen,xzoom);
         }).refresh;
         ^win;
     }
@@ -260,6 +273,7 @@ PatternPlotter {
             dotShape: \circle,
             labelColor: Color(0.3,0.6,0.4),
             labelFont: Font.monospace(9),
+            labelOffset: 0 @ -20,
             valueLabel: nil,
             valueLabelColor: Color(0.6,0.3,0.4),
             valueLabelFont: Font.monospace(9),
@@ -276,7 +290,7 @@ PatternPlotter {
             defs.putAll(aDefaults);
         };
         this.defaults = defs;
-        bounds = Rect(0,0,800,500);
+        bounds = Rect(0,0,100,100);
         tickColor = Color(0,0,0.5,0.5);
         tickDash = FloatArray[1,2];
         this.length = 16;
@@ -389,9 +403,25 @@ PatternPlotter {
         bounds.height = maxheight;
     }
 
-    draw {|pen=(Pen)|
+    update {
+        penRecorder = ASPen();
+        Routine {
+            "generating drawing".postln;
+            this.prDraw(penRecorder);
+            "done".postln;
+        }.play(thisThread.clock);
+    }
+
+    draw {|pen=(Pen),xscale=1|
+//        penRecorder ?? {this.update}; // not working
+        "drawing".postln;
+        penRecorder.replay(pen,xscale);
+    }
+
+    prDraw {|pen|
         var stream = Pfindur(length,pattern).asStream;
         var t = 0;
+        var startTime = thisThread.beats;
         var x;
         var yofs;
         var ev;
@@ -408,11 +438,13 @@ PatternPlotter {
         var plotEnd = {|plot, x|
             if(plot.isActive == true) {
                 if(plot.type==\notes) {
-                    var yy = round(plot.height/2+(plot.lineHeight*2.5)+plot.yofs-plot.padding);
+                    var yy = round(plot.height/2+(plot.lineHeight*2.5)+plot.yofs/*-plot.padding*/);
+                    var y;
                     5.do {|i|
-                        var y = yy-(i*plot.lineHeight*2) + 0.5;
+                        y = yy-(i*plot.lineHeight*2) + 0.5;
                         pen.line((plot.startX-6)@y,(x+6)@y);
                     };
+//                    pen.line((plot.startX-6)@(yy + 0.5),(plot.startX-6)@y);
                     pen.width = 1;
                     pen.strokeColor = plot.baselineColor ?? {Color.black};
                     pen.lineDash = plot.baselineDash;
@@ -436,12 +468,12 @@ PatternPlotter {
                 (v..end).do {|a|
                     if(a.even) {
                         y = round(yy-(a*plot.lineHeight))+0.5;
-                        pen.line((x-6)@y,(x+6)@y);
+                        pen.line((x-(2*plot.lineHeight))@y,(x+(2*plot.lineHeight))@y);
                     };
                 };
                 pen.width = 1;
 //                pen.strokeColor=Color.gray(0.5); // FIXME
-                pen.strokeColor = plot.baselineColor ?? {Color.gray};
+                pen.strokeColor = plot.baselineColor ?? {Color.black};
                 pen.stroke;
             };
         };
@@ -476,8 +508,15 @@ PatternPlotter {
                             plot.label !? {
                                 pen.font = plot.labelFont;
                                 pen.color = plot.labelColor;
-                                pen.stringAtPoint(plot.label,(x+labelMargin)@(round(yofs)+0.5));
+//                                pen.stringAtPoint(plot.label,(x+labelMargin)@(round(yofs)+0.5));
+                                pen.stringAtPoint(plot.label,x@(yofs+plot.padding) + plot.labelOffset);
                             };
+                            // plot.startBarColor !? {
+                            //     var w = plot.startBarWidth ? 10;
+                            //     pen.addRect(Rect(x-w-10,yofs+plot.padding,w,plot.height));
+                            //     pen.fillColor = Color.black;
+                            //     pen.fill;
+                            // };
                             plot.state = IdentityDictionary.new; // should this be here? I guess so.
                             plot.lastValueString = nil;
                             plot.startX = x;
@@ -552,7 +591,7 @@ PatternPlotter {
                                 },
                                 \bargraph, {
                                     if(lastP != p) {
-                                        pen.line(p.x @ plot.baseline, p);
+                                        pen.line(p.x @ (round(plot.yofs+(plot.height*(1-plot.baseline))) + 0.5), p);
                                         pen.stroke;
                                     };
                                     old = nil;
@@ -566,9 +605,10 @@ PatternPlotter {
                                     var line = noteLines[m%12]+(oct-(plot.octave+5) * 7 - 2);
                                     var acc = noteAccidentals[m%12];
                                     var lh = plot.lineHeight;
-                                    var yy = round(plot.height/2+(lh*2.5) + yofs - plot.padding);
+                                    var yy = round(plot.height/2+(lh*2.5) + yofs /*- plot.padding*/);
                                     var y2 = round(yy-(line*lh)); //+0.5;
                                     var p2 = (this.parmapClip(ev,plot.length,n) * xscale + x) @ round(y2);
+                                    var beamPos = plot.beamPosition !? {this.parmapClip(ev,plot.beamPosition,n)} ? 0;
                                     p = x@round(y2); // used by valueLabel..
                                     ty = y2; // used by tick drawing
 
@@ -580,9 +620,24 @@ PatternPlotter {
                                         doHelpLines.value(plot,line,10,'>=',x,yy);
                                     };
 
-                                    if(lw>0) {
-                                        pen.line(p.x+(lh*2-1) @ p.y,p2); // duration line
+                                    // FIXME: not relative notehead but middle of staff??
+                                    if(beamPos != 0) {
+                                        var x2 = round(if(beamPos>0,p.x+lh,p.x-lh))+0.5;
+//                                        var p3 = x2 @ round(y2-(beamPos*lh));
+                                        var p3 = x2 @ round(yy-(3+beamPos*lh));
+                                        if(lw.asInteger.odd) { p3.y = p3.y + 0.5 };
+                                        pen.use {
+                                            pen.width = 1;
+                                            pen.line(x2@p.y,p3);
+                                            pen.stroke;
+                                        };
+                                        pen.line(x2 @ p3.y, p2.x @ p3.y);
                                         pen.stroke;
+                                    } {
+                                        if(lw>0) {
+                                            pen.line(p.x+(lh*2-1) @ p.y,p2); // duration line
+                                            pen.stroke;
+                                        };
                                     };
 
                                     pen.addOval(Rect(x-(lh+0.5),y2-(lh-0.5),lh*2+1,lh*2-1));
@@ -628,7 +683,7 @@ PatternPlotter {
                                 lastP = p;
                                 lastP1 = p1;
 
-                                if(plot.type != \dots or: {dotSize.notNil and: {dotSize>0}}) {
+                                if(plot.drawTick!=false and: {plot.type != \dots or: {dotSize.notNil and: {dotSize>0}}}) {
                                     if(ty > bottomY) { bottomY = ty };
                                     if(ty < topY) { topY = ty };
                                 };
@@ -649,8 +704,10 @@ PatternPlotter {
                     topY= inf;
                     bottomY= -1;
                 }
-            }} // case event
+            }}; // case event
+            thisThread.beats = startTime + t;
         }; // event iteration loop
+
 
         // draw the last tick
         drawTick.value;
