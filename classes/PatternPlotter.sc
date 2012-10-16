@@ -621,7 +621,7 @@ PatternPlotter {
                                     if(beamPos != 0) {
                                         var x2 = round(if(beamPos>0,p.x+lh,p.x-lh))+0.5;
 //                                        var p3 = x2 @ round(y2-(beamPos*lh));
-                                        var p3 = x2 @ round(yy-(3+beamPos*lh));
+                                        var p3 = x2 @ round(yy-(4+beamPos*lh));
                                         if(lw.asInteger.odd) { p3.y = p3.y + 0.5 };
                                         pen.use {
                                             pen.width = 1;
@@ -653,7 +653,7 @@ PatternPlotter {
                                     }
                                     {acc<0} {
                                         pen.font = Font.sansSerif(12); // FIXME
-                                        pen.stringInRect("b",Rect(x-13,y2-6,10,20)); // FIXME
+                                        pen.stringInRect("b",Rect(x-11,y2-6,10,20)); // FIXME
                                     };
                                 }
                             );
@@ -714,5 +714,8 @@ PatternPlotter {
 + Pattern {
     plotPart {|id|
         ^PplotPart(id, this)
+    }
+    seed {|seed|
+        ^Pseed(Pn(seed,1),this)
     }
 }
