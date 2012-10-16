@@ -403,18 +403,15 @@ PatternPlotter {
         bounds.height = maxheight;
     }
 
-    update {
-        penRecorder = ASPen();
+    recordDrawing {
         Routine {
-            "generating drawing".postln;
+            penRecorder = ASPen();
             this.prDraw(penRecorder);
-            "done".postln;
-        }.play(thisThread.clock);
+        }.next;
     }
 
     draw {|pen=(Pen),xscale=1|
-//        penRecorder ?? {this.update}; // not working
-        "drawing".postln;
+        penRecorder ?? { this.recordDrawing };
         penRecorder.replay(pen,xscale);
     }
 
