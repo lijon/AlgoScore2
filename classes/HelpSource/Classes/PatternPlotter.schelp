@@ -1,0 +1,333 @@
+title:: PatternPlotter
+summary:: Draw a graphical score from a Pattern
+categories:: AlgoScore2>Patterns
+related:: Classes/PplotPart, Classes/Pattern
+
+description::
+PatternPlotter lets you plot a Pattern as a graphical score.
+
+image::patternplotter_screenshot2.png::
+
+section:: plotSpec format
+a plotSpec is an Event in the form (param1: value, param2: value, …), and defines one "row" of the plot. It maps keys from the event stream into graphical parameters.
+
+subsection:: static parameters
+The static parameters take a constant value, they are related to the plotSpec only, not the Event being plotted.
+table::
+## type || \linear, \steps, \levels, \bargraph, \dots, \linear2, \notes
+## height || the height of this plot in pixels
+## top || reset the row position to this value. default is nil, which puts this plot at the bottom of the previous one.
+## label || custom label, or nil to use the pattern key of y param
+## labelColor || color of label
+## labelFont || font of label
+## labelOffset || offset of label
+## baseline || position of baseline (0.0 to 1.0)
+## baselineColor || color of horizontal bottom line, nil to hide
+## baselineDash || line dash for horizontal bottom line
+## padding || top and bottom padding (pixels)
+## valueLabelNoRepeat || if true, only draw value label if it changed from last data point
+## lineHeight || spacing between pitches for type \notes
+## octave || octave for staff, 0 is with midinote 60 (C) at first bottom help-line. valid for type \notes only
+## plotID || only plot this if the pattern event belongs to the plotPart with this ID.
+                can be nil to match all (default), or a collection to match several.
+                The id itself can be a symbol or number.
+
+Use Pattern-plotPart(ID) to mark parts of the pattern.
+::
+
+subsection:: dynamic parameters
+The dynamic parameters can take a single value, like 1.0 or Color.black or anything that responds to .value (like Function or Stream), or an Association between a pattern event key and mapping ControlSpec/Function:
+code::
+    \keyName -> {|input_value| do_something_and_return_output_value }
+    \keyName -> nil (just pass the value through as is)
+    \keyName -> anything that responds to .asSpec
+::
+A spec is code::.unmap::'d to the range 0.0 - 1.0
+
+So these parameters can be mapped to specified values of the Event.
+table::
+## y || vertical position of data point (in the range 0.0 - 1.0)
+## y1 || vertical position for end point for type \levels
+## length || the pattern event key to use for line length in \levels type
+## lineWidth || line width (pixels)
+## dotSize || size of data point circle (pixels)
+## dotColor || color of data point circle (Color)
+## dotShape || \circle or \square (Symbol)
+## dash || line dash (FloatArray)
+## color || line color (Color)
+## valueLabel || value to print at data point
+## valueLabelColor || color for above
+## valueLabelFont || font for above
+## valueLabelOffset || offset for above relative data point
+## include || Skip this event if the value for this parameter is false.
+## beamPosition || for \notes type, 0 draws the duration beam at the same line as the notehead. other values draw the beam above/below the middle staff line.
+::
+
+y and y1 can multichannel expand if the associated event key returns an array.
+
+subsection:: plot types
+table::
+## \linear || linear plot between each data point with optional dots.
+## \linear2 || like \linear, but delayed one data point. so the y value is where its going strong::to::, not from.
+## \steps || horizontal lines ending with vertical line connecting to next data point.
+## \levels || horizontal lines with variable length, something like a "piano roll".
+## \bargraph || vertical lines from code::baseline:: to data point.
+## \dots || only dots.
+## \notes || simple standard notation of pitches on a 5-line clef (work in progress).
+::
+
+classmethods::
+
+method:: new
+Create an instance of PatternPlotter for the given pattern and plotSpecs.
+argument:: pattern
+The link::Classes/Pattern:: to plot.
+argument:: defaults
+An link::Classes/Event:: with defaults for the plotSpecs.
+argument:: plotSpecs
+An link::Classes/Array:: of plotSpec link::Classes/Event::s. See format below.
+
+instancemethods::
+
+method:: draw
+Draw the pattern.
+argument:: pen
+The pen with which to draw the pattern.
+argument:: xscale
+Not yet implemented...
+
+method:: length
+A time limit for the pattern. Internally, the pattern is wrapped in a link::Classes/Pfindur::.
+
+method:: bounds
+The bounds of the plot. The width equals code::length * xscale::
+
+method:: xscale
+Number of pixels per beat.
+
+method:: gui
+Create a simple scrollable window displaying the plot.
+
+examples::
+image::patternplotter_screenshot1.png::
+code::
+(
+PatternPlotter(
+    Pbind(
+        \degree, Pseq([0,3,6,[3,5,6],[4,1],2],inf),
+        \amp, Pseq([0.2,0.6,0.4,1],inf),
+        \foo, Pwhite(0,10,inf),
+        \dur, Pseq([0.5,0.25,1,0.25],8)
+    ),
+    nil,
+    [
+        (y: \freq -> [250,550,\exp], valueLabel: \freq -> _.round(0.1), dotSize: \amp -> _.linlin(0,1,1,8), dotColor: Color(0,0,0,0.4), \lineWidth:2),
+        (y: \amp -> [0,1], type: \bargraph, height: 50, baselineColor: Color.grey, dotShape: \square),
+        (y: \foo -> [0,10], dotSize: 3, type: \linear, height: 100, valueLabel: \foo -> nil)
+    ]
+).length_(16).gui;
+)
+::
+code::
+(
+x = PatternPlotter(
+    Pbind(
+        \midinote, Prand((57..84),inf).clump(3),
+        \dur, Prand([1,2],inf),
+        \legato, Pwhite(0.5,0.8).clump(3),
+    ),(
+    ),[
+        (
+            type: \notes,
+            y: \midinote,
+            octave: 0,
+            lineWidth: 2,
+            lineHeight: 4,
+//            beamPosition: -7,
+        )
+]);
+x.leftMargin = 20;
+x.rightMargin = 20;
+x.gui;
+)
+::
+code::
+(
+var pat = Pseq([
+    Ppar([
+        Pseq([
+            Pbind(*[
+                freq: Pwhite(20,20000,4),
+                dur: 0.5,
+                amp: 0.2,
+            ]).plotPart(\a),
+            Pbind(*[
+                freq: Pwhite(20,20000,8),
+                dur: 0.25,
+                amp: 0.4,
+            ]).plotPart(\b),
+            (type:\rest, dur:1),
+            Pbind(*[
+                freq: Pseq([20,20000],2),
+                dur: 0.5,
+                amp: 0.2,
+            ]).plotPart(\a),
+        ]),
+        Pseq([
+            Pbind(*[
+                freq: Pwhite(20,20000,4),
+                dur: 0.5,
+                amp: 0.6,
+                foo: Pseq([1,2,3,4,4,3,2,1]),
+            ]),
+            Pbind(*[
+                freq: Pseq([200,10000],4),
+                dur: 0.5,
+                amp: 0.3,
+                foo: Pseq([1,2,3,4,4,3,2,1]),
+            ]),
+        ]).plotPart(\c),
+    ]),
+    Pbind(*[
+        freq: Pseq([20,[200,1000],5000,[40,20000]]),
+        dur: 0.5,
+        amp: 0.5,
+        legato: 2,
+    ]).plotPart(\d),
+]);
+p = PatternPlotter(pat,
+    (
+        height: 60,
+        valueLabel: \freq -> _.cpsmidi.round,
+        dotSize: \amp -> _.linlin(0,1,1,10),
+        baselineColor: Color(0,0,0,0.5),
+        baselineDash: FloatArray[3,2],
+        labelFont: Font.sansSerif(14),
+    ),[
+        (
+            type: \steps,
+            plotIDs: #[a],
+            label: "a",
+            dotColor: Color.red,
+        ),
+        (
+            type: \bargraph,
+            plotIDs: #[b],
+            label: "b",
+            top: 0,
+            dotColor: Color.red,
+        ),
+        (
+            type: \dots,
+            height: 20,
+            y: 0,
+            dotSize: \foo -> (_ * 2),
+            plotIDs: #[c],
+            label: "c2",
+            dotColor: Color.black,
+        ),
+        (
+            type: \linear,
+            plotIDs: #[c],
+            label: "c1",
+            dotColor: Color.blue,
+        ),
+        (
+            type: \levels,
+            plotIDs: #[d],
+            label: "d",
+            top: 0,
+            height: 140,
+            dotColor: Color.gray,
+        ),
+]);
+p.length = 12;
+p.xscale = 80;
+p.gui;
+)
+::
+code::
+(
+var pattern = Pseed(1234,
+    Ppar([
+        Pbind(
+            \freq, Pseq([100,[200,250],800,300,[600,150,400],500,200,900],inf),
+            \instrument, Prand([\sound,\noise],inf),
+            \cutoff, Pwhite(100,1000,inf),
+            \cutoffTo, Pseq([200,Pwhite(600!2,1000,2),300],inf),
+            \dur, Pseq([0.5,1,0.25,0.25],inf),
+            \amp, Pseq([0.2,[0.3,0.6],Prand([0.2,0.4,0.6,0.8,1.0],6)],inf),
+            \legato, Pwhite(0.25,3,inf).round(0.25),
+            \bar, Pseq([0.2,0.4,0.6],inf),
+            \foo, Pseq([0,5,[2,3,4],[1,8],7,3,10],inf),
+        ).plotPart(1),
+        Pseq([
+            (type:\rest, dur:0.125),
+            Pbind(
+                \freq, Pseq([225,325,125],inf),
+                \amp, Pwhite(0.1,0.7,inf),
+                \instrument, \sound,
+                \bar, 0.8,
+                \foo, Prand([2,4],inf)+0.5,
+                \dur, 2,
+            )
+        ]).plotPart(2),
+    ])
+);
+
+var plotSpec = [
+    (
+        type:       \levels,
+        height:     150,
+        label:      "freq & amp",
+        y:          \freq -> [100,900,\exp],
+        dotSize:    \amp  -> _.linlin(0,1,2,8),
+        dotColor:   \bar  -> Color(0,0,0,_),
+        valueLabel: \freq -> _.round,
+        lineWidth:  1,
+        plotIDs: [1,2],
+    ),
+    (
+        type:       \levels,
+        height:     50,
+        y:          \cutoff -> [100,1000],
+        y1:         \cutoffTo -> [100,1000],
+        valueLabel: \cutoff,
+        color:      Color(0,0,0,0.5),
+        dotSize:    2.5,
+        plotIDs: 1,
+    ),
+    (
+//        type:       \steps,
+        type:       \linear,
+        label:      "pmod",
+        height:     100,
+        y:          \foo -> [0,10],
+        dotColor:   Color.grey(0.5),
+        dotShape:   \plotID -> {|x| (1:\square,2:\circle)[x]},
+        dotSize: 2.5,
+        dash:       \plotID -> {|x| if(x==2,FloatArray[2,2],FloatArray[inf,1])},
+        valueLabel: \foo,
+        plotIDs: [1,2],
+    ),
+    (
+        type:       \levels,
+        height:     40,
+        label:      "instrument",
+        y:          Pseq([0,1,2,3].normalize,inf).asStream,
+        valueLabel: \instrument,
+        valueLabelOffset: 0 @ -12,
+        lineWidth:  3,
+        dotSize:    0,
+        plotIDs: [1,2],
+    )
+];
+
+p = PatternPlotter(pattern,nil,plotSpec);
+p.xscale = 60;
+p.length = 24;
+p.leftMargin = 10;
+p.rightMargin = 50;
+p.gui;
+)
+::
