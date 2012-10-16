@@ -7,3 +7,6 @@ This new version will be built in SuperCollider.
 
 AlgoScore2 is work in progress...
 
+The PatternPlotter class is already useful:
+
+![screenshot](https://raw.github.com/lijon/AlgoScore2/master/classes/HelpSource/Classes/patternplotter_screenshot2.png)
