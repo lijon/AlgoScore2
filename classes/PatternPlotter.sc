@@ -265,8 +265,9 @@ PatternPlotter {
             length: \sustain -> nil,
             label: nil,
             lineWidth: 1,
-            lineHeight: 3, // for \notes
+            lineHeight: 4, // for \notes
             octave: 0, // for \notes
+            beamFixed: false,
             padding: 20,
             dotSize: nil, //2.5,
             dotColor: Color.black,
@@ -415,6 +416,39 @@ PatternPlotter {
         penRecorder.replay(pen,xscale);
     }
 
+    drawClef {|ctx,center,lh|
+        var scale = lh/4.5;
+        ctx.use {
+            ctx.translate(center.x-(17*scale),center.y-(42*scale));
+            ctx.scale(scale,scale);
+            ctx.translate(-32,-4);
+            ctx.moveTo(39.708934@63.678683);
+            ctx.curveTo(45.890584@70.256984,39.317094@65.77065,41.499606@70.115061);
+            ctx.curveTo(53.010333@59.740875,51.19892@70.428558,54.590321@66.367906);
+            ctx.lineTo(45.086538@23.171517);
+            ctx.curveTo(45.354941@15.049945,44.143281@18.81826,44.851281@16.457097);
+            ctx.curveTo(50.873134@10.949208,46.698676@11.295749,50.055822@9.7473042);
+            ctx.curveTo(49.256275@20.590821,51.339763@11.635413,52.468042@14.844006);
+            ctx.curveTo(34.2417@41.468011,46.751378@25.072835,35.096985@30.950138);
+            ctx.curveTo(51.339266@54.71374,33.501282@50.614249,43.075689@57.369301);
+            ctx.curveTo(56.258057@40.328987,56.825686@52.950639,59.653965@44.62402);
+            ctx.curveTo(46.846564@51.0935,47.29624@28.994371,32.923702@46.341263);
+            ctx.curveTo(44.1085@47.852721,45.332604@49.90238,44.300646@48.980054);
+            ctx.curveTo(54.294493@50.18735,42.237755@36.876941,58.741182@39.774741);
+            ctx.curveTo(40.874269@51.477433,52.466001@54.469045,45.080341@55.297323);
+            ctx.curveTo(39.708327@37.687888,37.350853@48.277521,35.787387@42.113231);
+            ctx.curveTo(52.954064@18.108736,45.018831@31.694223,51.288782@26.31366);
+            ctx.curveTo(44.429027@10.385835,54.923313@8.4061491,48.493821@0.84188926);
+            ctx.curveTo(43.863006@22.963534,43.065093@13.588288,42.557016@16.803074);
+            ctx.lineTo(51.780549@60.311215);
+            ctx.curveTo(49.472374@68.355474,52.347386@62.985028,51.967911@66.664419);
+            ctx.curveTo(42.791575@67.770092,48.236187@69.193154,43.861784@69.769668);
+            ctx.fill;
+            ctx.addArc(43.809425@63.584198,4,0,2pi);
+            ctx.fill;
+        };
+    }
+
     prDraw {|pen|
         var stream = Pfindur(length,pattern).asStream;
         var t = 0;
@@ -437,15 +471,19 @@ PatternPlotter {
                 if(plot.type==\notes) {
                     var yy = round(plot.height/2+(plot.lineHeight*2.5)+plot.yofs/*-plot.padding*/);
                     var y;
+                    var marg = 30;
                     5.do {|i|
                         y = yy-(i*plot.lineHeight*2) + 0.5;
-                        pen.line((plot.startX-6)@y,(x+6)@y);
+                        pen.line((plot.startX-marg)@y,(x+6)@y);
                     };
 //                    pen.line((plot.startX-6)@(yy + 0.5),(plot.startX-6)@y);
                     pen.width = 1;
                     pen.strokeColor = plot.baselineColor ?? {Color.black};
                     pen.lineDash = plot.baselineDash;
                     pen.stroke;
+                    y = yy-(plot.lineHeight*2) + 0.5;
+                    pen.fillColor = Color.black; // FIXME
+                    this.drawClef(pen, (plot.startX - marg + 10) @ y, plot.lineHeight);
                 } {
                     var y = round(plot.yofs+(plot.height*(1-plot.baseline))) + 0.5;
                     plot.baselineColor !? {
@@ -502,6 +540,7 @@ PatternPlotter {
                     if(ev.type==\plotPart and: evMatches) {
                         if(plot.isActive!=true) {
                             ev.plotID.debug("plotPart begin [plotspec %]".format(i));
+                            // FIXME: only draw label the first time this plotspec is drawn?
                             plot.label !? {
                                 pen.font = plot.labelFont;
                                 pen.color = plot.labelColor;
@@ -619,16 +658,21 @@ PatternPlotter {
 
                                     // FIXME: not relative notehead but middle of staff??
                                     if(beamPos != 0) {
-                                        var x2 = round(if(beamPos>0,p.x+lh,p.x-lh))+0.5;
-//                                        var p3 = x2 @ round(y2-(beamPos*lh));
-                                        var p3 = x2 @ round(yy-(4+beamPos*lh));
+                                        var x2 = round(if(beamPos>0,p.x+(lh*1.1),p.x-(lh*1.1)))+0.5;
+//                                        var p3 = x2 @ round(y2-(beamPos*lh)); // relative this note
+//                                        var p3 = x2 @ round(yy-(4+beamPos*lh)); // relative middle line
+                                        var p3 = if(this.parmapClip(ev,plot.beamFixed,n)==true) {
+                                            x2 @ round(yy-(4+beamPos*lh)); // relative middle line
+                                        } {
+                                            x2 @ round(y2-(beamPos*lh)); // relative this note
+                                        };
                                         if(lw.asInteger.odd) { p3.y = p3.y + 0.5 };
                                         pen.use {
                                             pen.width = 1;
                                             pen.line(x2@p.y,p3);
                                             pen.stroke;
                                         };
-                                        pen.line(x2 @ p3.y, p2.x @ p3.y);
+                                        pen.line((x2-0.5) @ p3.y, p2.x @ p3.y);
                                         pen.stroke;
                                     } {
                                         if(lw>0) {
@@ -637,22 +681,22 @@ PatternPlotter {
                                         };
                                     };
 
-                                    pen.addOval(Rect(x-(lh+0.5),y2-(lh-0.5),lh*2+1,lh*2-1));
+                                    pen.addOval(Rect(round(x-(lh*1.1))+0.0,round(y2-lh)+0.5,round(lh*2.2)+1,round(lh*2)));
                                     pen.fillColor = this.parmapClip(ev,plot.color,n);
                                     pen.use {
                                         pen.rotate(-0.4,x,y2);
-//                                        pen.width = 1;
-//                                        pen.strokeColor = Color.white; // test
-//                                        pen.fillStroke;
+//                                        pen.skew(0,-0.1);
                                         pen.fill;
                                     };
+                                    // FIXME: offset for accidentals are not correct..
+                                    // better if we draw them with pen instructions.
                                     case
                                     {acc>0} {
-                                        pen.font = Font.sansSerif(14); // FIXME
+                                        pen.font = Font.serif(lh*3.5); // FIXME
                                         pen.stringInRect("#",Rect(x-13,y2-6,10,20)); // FIXME
                                     }
                                     {acc<0} {
-                                        pen.font = Font.sansSerif(12); // FIXME
+                                        pen.font = Font.serif(lh*3); // FIXME
                                         pen.stringInRect("b",Rect(x-11,y2-6,10,20)); // FIXME
                                     };
                                 }
