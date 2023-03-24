@@ -1,0 +1,9 @@
+(
+  name: "AlgoScore2",
+  summary: "A graphical environment for algorithmic composition, where music is constructed directly in an interactive graphical score.",
+  version: "2.0.0",
+  schelp: "Algoscore",
+  dependencies: [],
+  //license: "GPL",
+  copyright: "Jonatan Liljedahl. 2012"
+)
