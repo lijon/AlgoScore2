@@ -204,7 +204,7 @@ PplotPart {
         ^Prout({ | ev |
             var a, cleanup;
             cleanup = EventStreamCleanup.new;
-            a = (type: \plotPart, isRest: true, dur: 0, plotID: id, plotCleanupFuncs:List[]);
+			a = (type: \plotPart, isRest: Rest(0), dur: 0, plotID: id, plotCleanupFuncs:List[]);
             cleanup.addFunction(a, { a.plotCleanupFuncs.do(_.value); a.plotCleanupFuncs.clear });
             ev = a.yield;
             ev = Pchain(pattern, (plotID: id)).embedInStream(ev);
@@ -494,7 +494,9 @@ PatternPlotter {
                         pen.stroke;
                     };
                 };
-                plot.isActive = false;
+                //plot.isActive = false;
+				//"plot stop".postln;
+				plot.stop;  // isActive is a method, not a member boolean
             };
         };
         var doHelpLines = {|plot,v,end,op,x,yy|
@@ -556,7 +558,8 @@ PatternPlotter {
                             plot.state = IdentityDictionary.new; // should this be here? I guess so.
                             plot.lastValueString = nil;
                             plot.startX = x;
-                            plot.isActive = true;
+                            //plot.isActive = true;
+							plot.resume; // The above is illegal
                             ev.plotCleanupFuncs.add {
                                 plot.plotIDs.debug("plotPart cleanup [plotspec %]".format(i));
                                 plotEnd.value(plot, x);
